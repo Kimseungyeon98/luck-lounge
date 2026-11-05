@@ -1,9 +1,13 @@
 import './style.css';
 import { api, ApiError } from './api';
 import { showEntry } from './entry';
+import { showLobbyHud } from './lobbyHud';
+import { connectLounge } from './net/loungeSocket';
+import { clearToken } from './storage';
+import type { LoungeView } from './three/LoungeView';
 
 const app = document.getElementById('app')!;
-const gameRoot = document.getElementById('game')!;
+const stage = document.getElementById('stage')!;
 
 function notice(title: string, body: string) {
   const main = document.createElement('main');
@@ -14,6 +18,17 @@ function notice(title: string, body: string) {
   p.textContent = body;
   main.append(h1, p);
   app.replaceChildren(main);
+}
+
+async function createView(): Promise<LoungeView | null> {
+  try {
+    const { LoungeView } = await import('./three/LoungeView');
+    return new LoungeView(stage);
+  } catch {
+    // WebGL을 못 쓰는 브라우저: 3D 없이 입장과 접속자 목록만
+    document.body.classList.add('no-3d');
+    return null;
+  }
 }
 
 async function boot() {
@@ -31,10 +46,30 @@ async function boot() {
     return;
   }
   document.title = `${team.name} · 운빨 라운지`;
-  const me = await showEntry(app, team);
-  app.replaceChildren();
-  const { startLobby } = await import('./lobby/startLobby');
-  await startLobby(gameRoot, team, me);
+
+  const viewPromise = createView();
+  const view = await viewPromise;
+  const me = await showEntry(app, team, {
+    onPreview: (nickname, characterIndex) => view?.preview(nickname, characterIndex),
+  });
+
+  view?.enterLobby(me);
+  const hud = showLobbyHud(app, team);
+  if (!view) hud.showFallbackList();
+
+  connectLounge(team.slug, me.token, {
+    onPresence: (players) => {
+      view?.setPresence(players);
+      hud.setPresence(players);
+    },
+    onState: (state) => {
+      hud.setState(state);
+      if (state === 'rejected') {
+        clearToken(team.slug);
+        setTimeout(() => location.reload(), 1500);
+      }
+    },
+  });
 }
 
 void boot();

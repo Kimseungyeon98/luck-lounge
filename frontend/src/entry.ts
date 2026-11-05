@@ -8,11 +8,16 @@ function el<K extends keyof HTMLElementTagNameMap>(tag: K, props: Record<string,
   return node;
 }
 
+export interface EntryHooks {
+  /** 닉네임이나 캐릭터가 바뀔 때마다 (3D 미리보기 갱신) */
+  onPreview(nickname: string, characterIndex: number): void;
+}
+
 /**
- * 입장 화면. 매 접속마다 닉네임 입력란을 보여 주고, 이 기기로 들어온 적 있으면 지난 닉네임·캐릭터를 채워 둔다.
- * 입장이 끝나면 resolve 된다.
+ * 메인(입장) 화면: 3D 라운지 위에 올라가는 입력 카드.
+ * 매 접속마다 닉네임 입력란을 보여 주고, 이 기기로 들어온 적 있으면 지난 닉네임·캐릭터를 채워 둔다.
  */
-export async function showEntry(root: HTMLElement, team: Team): Promise<Joined> {
+export async function showEntry(root: HTMLElement, team: Team, hooks: EntryHooks): Promise<Joined> {
   const token = loadToken(team.slug);
   const [me, members] = await Promise.all([
     api.me(team.slug, token).catch(() => null),
@@ -20,41 +25,32 @@ export async function showEntry(root: HTMLElement, team: Team): Promise<Joined> 
   ]);
 
   let resumePlayerId: string | null = null;
+  let character = me?.characterIndex ?? Math.floor(Math.random() * CHARACTER_COUNT);
 
   const nickname = el('input', {
     type: 'text', id: 'nickname', name: 'nickname', maxLength: 12, required: true,
     autocomplete: 'off', enterKeyHint: 'go', value: me?.nickname ?? '', placeholder: '예: 김대리',
   });
-  const hint = el('p', { className: 'hint', id: 'nickname-hint' },
-    [me ? '지난번 닉네임이에요. 바꿔도 기록은 그대로 이어져요.' : '12글자까지. 언제든 바꿀 수 있어요.']);
   nickname.setAttribute('aria-describedby', 'nickname-hint');
+  const hint = el('p', { className: 'hint', id: 'nickname-hint' },
+    [me ? '지난번 닉네임이에요. 바꿔도 기록은 이어져요.' : '12글자까지 쓸 수 있어요.']);
 
-  const cast = el('div', { className: 'cast' });
-  const initialCharacter = me?.characterIndex ?? Math.floor(Math.random() * CHARACTER_COUNT);
-  for (let i = 0; i < CHARACTER_COUNT; i++) {
-    const radio = el('input', { type: 'radio', name: 'character', value: String(i), id: `character-${i}` });
-    radio.checked = i === initialCharacter;
-    const img = el('img', { src: characterDataUrl(i), alt: `${i + 1}번 ${CHARACTER_NAMES[i]}` });
-    cast.append(el('label', { htmlFor: `character-${i}` }, [radio, el('span', { className: 'tile' }, [img])]));
-  }
+  const charLabel = el('span', { className: 'picker-label', id: 'character-label' });
+  charLabel.setAttribute('aria-live', 'polite');
+  const prev = el('button', { type: 'button', className: 'round', ariaLabel: '이전 캐릭터' }, ['◀']);
+  const next = el('button', { type: 'button', className: 'round', ariaLabel: '다음 캐릭터' }, ['▶']);
 
   const resumeChip = el('div', { className: 'resume-chip', hidden: true });
   const error = el('p', { className: 'error', role: 'alert' });
   const submit = el('button', { type: 'submit', className: 'primary' }, ['라운지 입장']);
 
-  const form = el('form', { noValidate: true }, [
-    el('div', { className: 'field' }, [el('label', { htmlFor: 'nickname' }, ['닉네임']), nickname, hint]),
-    el('fieldset', {}, [el('legend', {}, ['캐릭터']), cast]),
-    resumeChip,
-    error,
-    submit,
-  ]);
-
-  const selected = () => Number((form.querySelector('input[name="character"]:checked') as HTMLInputElement | null)?.value ?? 0);
-  const setCharacter = (i: number) => {
-    const radio = form.querySelector<HTMLInputElement>(`#character-${i}`);
-    if (radio) radio.checked = true;
+  const update = () => {
+    charLabel.textContent = `${character + 1} / ${CHARACTER_COUNT} · ${CHARACTER_NAMES[character]}`;
+    hooks.onPreview(nickname.value.trim(), character);
   };
+  prev.addEventListener('click', () => { character = (character + CHARACTER_COUNT - 1) % CHARACTER_COUNT; update(); });
+  next.addEventListener('click', () => { character = (character + 1) % CHARACTER_COUNT; update(); });
+  nickname.addEventListener('input', update);
 
   const setResume = (p: PlayerView | null) => {
     resumePlayerId = p?.playerId ?? null;
@@ -62,43 +58,55 @@ export async function showEntry(root: HTMLElement, team: Team): Promise<Joined> 
     resumeChip.hidden = !p;
     if (p) {
       nickname.value = p.nickname;
-      setCharacter(p.characterIndex);
+      character = p.characterIndex;
       const cancel = el('button', { type: 'button' }, ['취소']);
-      cancel.addEventListener('click', () => { setResume(null); nickname.value = ''; nickname.focus(); });
+      cancel.addEventListener('click', () => { setResume(null); nickname.value = ''; update(); nickname.focus(); });
       resumeChip.append(el('span', {}, [`${p.nickname}(으)로 이어서 들어가요`]), cancel);
     }
+    update();
   };
 
-  const children: Node[] = [
-    el('header', {}, [
-      el('p', { className: 'brand' }, ['운빨 라운지']),
-      el('h1', {}, [team.name]),
-      el('p', { className: 'sub' }, ['실력은 필요 없어요. 오늘의 운을 시험해 보세요.']),
-    ]),
-    form,
-  ];
+  const card = el('form', { className: 'card', noValidate: true }, [
+    el('label', { htmlFor: 'nickname' }, ['닉네임']),
+    nickname,
+    hint,
+    el('div', { className: 'picker', role: 'group', ariaLabel: '캐릭터 고르기' }, [prev, charLabel, next]),
+    resumeChip,
+    error,
+    submit,
+  ]);
 
   if (!me && members.length > 0) {
-    const list = el('div', { className: 'members' });
+    const list = el('div', { className: 'members', hidden: true, id: 'members' });
     for (const m of members) {
       const b = el('button', { type: 'button', className: 'member' }, [
         el('img', { src: characterDataUrl(m.characterIndex, 1), alt: '' }), m.nickname,
       ]);
-      b.addEventListener('click', () => { setResume(m); window.scrollTo({ top: 0, behavior: 'smooth' }); });
+      b.addEventListener('click', () => { setResume(m); list.hidden = true; toggle.setAttribute('aria-expanded', 'false'); });
       list.append(b);
     }
-    children.push(el('section', { className: 'resume' }, [
-      el('h2', {}, ['이미 들어온 적 있나요?']),
-      el('p', {}, ['다른 브라우저로 열었다면 내 이름을 눌러 이어하세요. 기록이 그대로 이어져요.']),
-      list,
-    ]));
+    const toggle = el('button', { type: 'button', className: 'link' }, ['이미 들어온 적 있나요? 내 이름으로 이어하기']);
+    toggle.setAttribute('aria-expanded', 'false');
+    toggle.setAttribute('aria-controls', 'members');
+    toggle.addEventListener('click', () => {
+      list.hidden = !list.hidden;
+      toggle.setAttribute('aria-expanded', String(!list.hidden));
+    });
+    card.append(toggle, list);
   }
 
-  root.replaceChildren(el('main', { className: 'entry' }, children));
-  if (!me) nickname.focus();
+  root.replaceChildren(el('main', { className: 'entry' }, [
+    el('header', { className: 'entry-head' }, [
+      el('p', { className: 'brand' }, ['운빨 라운지']),
+      el('h1', {}, [team.name]),
+      el('p', { className: 'sub' }, ['실력은 필요 없어요']),
+    ]),
+    card,
+  ]));
+  update();
 
   return new Promise<Joined>((resolve) => {
-    form.addEventListener('submit', async (e) => {
+    card.addEventListener('submit', async (e) => {
       e.preventDefault();
       error.textContent = '';
       if (!nickname.value.trim()) {
@@ -109,10 +117,9 @@ export async function showEntry(root: HTMLElement, team: Team): Promise<Joined> 
       submit.disabled = true;
       submit.textContent = '들어가는 중…';
       try {
-        const joined = await api.join(team.slug, token, {
-          nickname: nickname.value, characterIndex: selected(), resumePlayerId,
-        });
+        const joined = await api.join(team.slug, token, { nickname: nickname.value, characterIndex: character, resumePlayerId });
         saveToken(team.slug, joined.token);
+        nickname.blur();
         resolve(joined);
       } catch (err) {
         error.textContent = err instanceof ApiError ? err.message : '잠시 후 다시 시도해 주세요.';
