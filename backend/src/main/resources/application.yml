@@ -1,0 +1,24 @@
+spring:
+  application:
+    name: luck-lounge
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/lucklounge}
+    username: ${DB_USER:lucklounge}
+    password: ${DB_PASSWORD:lucklounge}
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: validate
+  threads:
+    virtual:
+      enabled: true
+
+server:
+  forward-headers-strategy: framework
+  shutdown: graceful
+
+lucklounge:
+  # 팀 링크를 로그에 찍을 때 쓰는 주소. 운영에서는 https://{도메인}
+  base-url: ${BASE_URL:http://localhost:8080}
+  # 서버 첫 실행 때 자동으로 만들 팀 이름
+  default-team-name: ${DEFAULT_TEAM_NAME:우리 팀}

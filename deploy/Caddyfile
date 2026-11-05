@@ -1,0 +1,6 @@
+# DOMAIN(예: lucklounge.duckdns.org)으로 들어오면 Let's Encrypt 인증서를 자동으로 받아 HTTPS로 연결한다.
+# WebSocket(/ws)도 별도 설정 없이 그대로 전달된다.
+{$DOMAIN} {
+	encode gzip
+	reverse_proxy app:8080
+}

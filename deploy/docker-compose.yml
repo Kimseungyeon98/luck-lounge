@@ -1,0 +1,52 @@
+# 운빨 라운지 운영 구성: Caddy(HTTPS) → Spring Boot → PostgreSQL
+# 사용법: 이 폴더에 .env 를 만든 뒤 `docker compose up -d --build`
+services:
+  db:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: lucklounge
+      POSTGRES_USER: lucklounge
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD 를 .env 에 넣어 주세요}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U lucklounge -d lucklounge"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  app:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DB_URL: jdbc:postgresql://db:5432/lucklounge
+      DB_USER: lucklounge
+      DB_PASSWORD: ${DB_PASSWORD}
+      BASE_URL: https://${DOMAIN:?DOMAIN 을 .env 에 넣어 주세요}
+      DEFAULT_TEAM_NAME: ${DEFAULT_TEAM_NAME:-우리 팀}
+      TZ: Asia/Seoul
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    depends_on:
+      - app
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    environment:
+      DOMAIN: ${DOMAIN}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+
+volumes:
+  pgdata:
+  caddy_data:
+  caddy_config:
