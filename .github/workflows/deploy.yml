@@ -1,0 +1,53 @@
+name: Deploy
+
+# main 에 머지되면 테스트 → jar 빌드 → Oracle VM 에 올리고 재시작.
+# 필요한 저장소 Secrets: VM_HOST, VM_USER, VM_SSH_KEY (docs/oracle-setup.md 참고)
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '25'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - uses: gradle/actions/setup-gradle@v4
+      - run: ./gradlew build --no-daemon
+
+      - name: Oracle VM 에 배포
+        env:
+          VM_HOST: ${{ secrets.VM_HOST }}
+          VM_USER: ${{ secrets.VM_USER }}
+          VM_SSH_KEY: ${{ secrets.VM_SSH_KEY }}
+        run: |
+          if [ -z "$VM_HOST" ]; then
+            echo "::notice::VM_HOST secret 이 없어 배포를 건너뜁니다. docs/oracle-setup.md 를 참고해 등록해 주세요."
+            exit 0
+          fi
+          mkdir -p ~/.ssh
+          echo "$VM_SSH_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H "$VM_HOST" >> ~/.ssh/known_hosts
+          SSH="ssh -i ~/.ssh/deploy_key $VM_USER@$VM_HOST"
+          $SSH "mkdir -p /opt/luck-lounge"
+          scp -i ~/.ssh/deploy_key \
+            backend/build/libs/luck-lounge.jar \
+            deploy/Dockerfile deploy/docker-compose.yml deploy/Caddyfile \
+            deploy/teams.sh deploy/backup.sh \
+            "$VM_USER@$VM_HOST:/opt/luck-lounge/"
+          $SSH "cd /opt/luck-lounge && chmod +x teams.sh backup.sh && docker compose up -d --build && docker image prune -f"
+          $SSH "cd /opt/luck-lounge && sleep 20 && docker compose ps && ./teams.sh"
