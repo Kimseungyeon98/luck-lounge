@@ -10,6 +10,8 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.security.SecureRandom;
+import java.util.Random;
 import java.util.Set;
 import java.util.UUID;
 
@@ -61,9 +63,15 @@ public class LobbyRoom {
     public record PresenceView(List<MemberView> players, UUID hostId) {
     }
 
-    /** 틱 한 번의 결과: 위치가 바뀌었는지, 접속자·방장 정보가 바뀌었는지 */
-    public record TickResult(boolean positionsChanged, boolean presenceChanged) {
+    /** 틱 한 번의 결과: 위치가 바뀌었는지, 접속자·방장 정보가 바뀌었는지, 시한폭탄에 일어난 일 */
+    public record TickResult(boolean positionsChanged, boolean presenceChanged, List<BombGame.Event> bombEvents) {
     }
+
+    public enum StartFailure { NOT_HOST, ALREADY_RUNNING, NOT_ENOUGH_PLAYERS }
+
+    /** 시한폭탄 판이 둥글게 서는 자리의 중심 (테이블·부스와 겹치지 않는 곳) */
+    static final double BOMB_CENTER_X = 0.6;
+    static final double BOMB_CENTER_Z = 0.9;
 
     private final String teamSlug;
     private final Map<UUID, Member> members = new LinkedHashMap<>();
@@ -71,9 +79,16 @@ public class LobbyRoom {
     private long arrivalCounter;
     private UUID hostId;
     private Instant hostAbsentSince;
+    private final Random random;
+    private BombGame bomb;
 
     public LobbyRoom(String teamSlug) {
+        this(teamSlug, new SecureRandom());
+    }
+
+    LobbyRoom(String teamSlug, Random random) {
         this.teamSlug = teamSlug;
+        this.random = random;
     }
 
     public String teamSlug() {
@@ -132,7 +147,7 @@ public class LobbyRoom {
     /** 탭 이동: 목적지 */
     public synchronized void moveTo(UUID playerId, double tx, double tz) {
         Member m = onlineMember(playerId);
-        if (m == null || !Double.isFinite(tx) || !Double.isFinite(tz)) {
+        if (m == null || playingBomb(playerId) || !Double.isFinite(tx) || !Double.isFinite(tz)) {
             return;
         }
         m.targetX = clamp(tx, Obstacles.MIN_X, Obstacles.MAX_X);
@@ -144,7 +159,7 @@ public class LobbyRoom {
     /** 조이스틱: 방향과 세기(최대 1). 0이면 멈춤 */
     public synchronized void steer(UUID playerId, double dx, double dz) {
         Member m = onlineMember(playerId);
-        if (m == null || !Double.isFinite(dx) || !Double.isFinite(dz)) {
+        if (m == null || playingBomb(playerId) || !Double.isFinite(dx) || !Double.isFinite(dz)) {
             return;
         }
         double len = Math.hypot(dx, dz);
@@ -204,6 +219,16 @@ public class LobbyRoom {
             m.moving = step(m, dt);
             moved |= m.moving || was;
         }
+        List<BombGame.Event> bombEvents = List.of();
+        if (bomb != null) {
+            bombEvents = bomb.advanceTo(now, id -> {
+                Member m = members.get(id);
+                return m != null && m.online();
+            });
+            if (bombEvents.stream().anyMatch(e -> e instanceof BombGame.Finished)) {
+                bomb = null;
+            }
+        }
         boolean presence = false;
         if (hostId != null && hostAbsentSince != null
                 && Duration.between(hostAbsentSince, now).compareTo(HOST_GRACE) >= 0) {
@@ -216,7 +241,75 @@ public class LobbyRoom {
                 arrivalCounter = 0;
             }
         }
-        return new TickResult(moved, presence);
+        return new TickResult(moved, presence, bombEvents);
+    }
+
+    // ---------- 시한폭탄 ----------
+
+    /** 방장이 시작. 대기실에 있는(자리비움 아닌) 사람 모두 참가, 2명 이상이어야 한다. */
+    public synchronized Object startBomb(UUID by, Instant now) {
+        if (!by.equals(hostId)) {
+            return StartFailure.NOT_HOST;
+        }
+        if (bomb != null) {
+            return StartFailure.ALREADY_RUNNING;
+        }
+        List<UUID> players = members.values().stream()
+                .filter(m -> m.online() && !m.away)
+                .sorted(Comparator.comparingLong(m -> m.arrivalOrder))
+                .map(m -> m.id)
+                .toList();
+        if (players.size() < 2) {
+            return StartFailure.NOT_ENOUGH_PLAYERS;
+        }
+        bomb = BombGame.start(players, now, random);
+        placeInCircle(bomb.order());
+        return new BombGame.Started(bomb.order(), bomb.holder(), BOMB_CENTER_X, BOMB_CENTER_Z);
+    }
+
+    public synchronized BombGame.PassResult passBomb(UUID playerId, Instant now) {
+        if (bomb == null) {
+            return BombGame.PassResult.OVER;
+        }
+        return bomb.pass(playerId, now);
+    }
+
+    public synchronized Optional<UUID> bombHolder() {
+        return bomb == null || bomb.exploded() ? Optional.empty() : Optional.of(bomb.holder());
+    }
+
+    /** 진행 중인 판 (늦게 들어온 사람, 재접속한 사람에게 다시 알려 줄 때) */
+    public synchronized Optional<BombGame.Started> bombInProgress() {
+        if (bomb == null || bomb.exploded()) {
+            return Optional.empty();
+        }
+        return Optional.of(new BombGame.Started(bomb.order(), bomb.holder(), BOMB_CENTER_X, BOMB_CENTER_Z));
+    }
+
+    private boolean playingBomb(UUID id) {
+        return bomb != null && bomb.participates(id);
+    }
+
+    /** 참가자를 순서대로 둥글게 세운다 */
+    private void placeInCircle(List<UUID> order) {
+        int n = order.size();
+        double radius = Math.max(1.6, n * 0.33);
+        for (int i = 0; i < n; i++) {
+            Member m = members.get(order.get(i));
+            double a = (double) i / n * Math.PI * 2;
+            double x = BOMB_CENTER_X + Math.sin(a) * radius;
+            double z = BOMB_CENTER_Z + Math.cos(a) * radius;
+            if (!Obstacles.blocked(x, z)) {
+                m.x = x;
+                m.z = z;
+            }
+            m.face = Math.atan2(BOMB_CENTER_X - m.x, BOMB_CENTER_Z - m.z);
+            m.targetX = null;
+            m.targetZ = null;
+            m.dirX = 0;
+            m.dirZ = 0;
+            m.moving = false;
+        }
     }
 
     private boolean step(Member m, double dt) {

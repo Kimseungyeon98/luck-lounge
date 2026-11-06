@@ -200,3 +200,44 @@ input[type="text"]:focus { outline: none; border-color: var(--focus); box-shadow
 /* 대기실 표시줄은 빈 곳을 누르면 아래 3D 화면(바닥)으로 전달되어야 한다 */
 #app > .hud { pointer-events: none; }
 .hud-top { pointer-events: none; }
+
+/* ---------- M3: 시한폭탄 ---------- */
+.bomb-layer { position: fixed; inset: 0; pointer-events: none; z-index: 3; }
+.bomb-layer > * { pointer-events: auto; }
+.bomb-flash { position: absolute; inset: 0; pointer-events: none; box-shadow: inset 0 0 0 0 rgba(255, 70, 40, 0); }
+.bomb-flash.on { animation: bomb-flash 0.6s ease-out 2; }
+@keyframes bomb-flash { 0% { box-shadow: inset 0 0 70px 24px rgba(255, 70, 40, 0.8); } 100% { box-shadow: inset 0 0 0 0 rgba(255, 70, 40, 0); } }
+.bomb-status {
+  position: absolute; top: calc(max(14px, env(safe-area-inset-top)) + 64px); left: 50%; transform: translateX(-50%);
+  background: rgba(255, 255, 255, 0.96); border-radius: 14px; padding: 9px 16px; font-size: 15px; font-weight: 700;
+  width: max-content; max-width: 88%; text-align: center; box-shadow: 0 4px 14px rgba(24, 32, 43, 0.15); pointer-events: none;
+}
+.bomb-status small { display: block; font-size: 12px; font-weight: 500; color: var(--muted); }
+.bomb-bottom {
+  position: absolute; left: 0; right: 0; bottom: 0; display: flex; flex-direction: column; gap: 8px;
+  max-width: 520px; margin: 0 auto;
+  padding: 0 max(16px, env(safe-area-inset-right)) max(18px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
+  pointer-events: none;
+}
+.bomb-bottom > * { pointer-events: auto; }
+.bomb-holdbar { height: 8px; border-radius: 4px; background: rgba(24, 32, 43, 0.15); overflow: hidden; }
+.bomb-holdbar i { display: block; height: 100%; width: 0; background: var(--accent); }
+.bomb-hold-text { margin: 4px 0 0; text-align: center; font-size: 12.5px; font-weight: 700; text-shadow: 0 1px 0 #fff; }
+.bomb-pass {
+  font-size: 20px; font-weight: 800; border: 0; border-radius: 18px; padding: 18px;
+  background: var(--accent); color: #ffffff; cursor: pointer; box-shadow: 0 8px 20px rgba(255, 106, 61, 0.4);
+  touch-action: manipulation;
+}
+.bomb-pass:disabled { background: #f2b8a6; box-shadow: none; cursor: default; }
+.bomb-result {
+  position: absolute; left: 50%; bottom: max(24px, env(safe-area-inset-bottom)); transform: translateX(-50%);
+  width: min(440px, calc(100% - 32px));
+  background: #ffffff; border-radius: 24px; padding: 22px 18px; text-align: center;
+  box-shadow: 0 16px 40px rgba(24, 32, 43, 0.3); display: flex; flex-direction: column; gap: 6px;
+}
+.bomb-boom { font-family: var(--font-display); font-size: 36px; color: var(--accent); line-height: 1.1; }
+.bomb-who { font-family: var(--font-display); font-size: 28px; line-height: 1.2; }
+.bomb-note { margin: 0; font-size: 13px; color: var(--muted); }
+.sheet-start { border: 0; border-radius: 14px; padding: 14px; background: var(--ink); color: #ffffff; font-size: 16px; font-weight: 800; cursor: pointer; }
+.sheet-start:focus-visible, .bomb-pass:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+@media (prefers-reduced-motion: reduce) { .bomb-flash.on { animation: none; box-shadow: inset 0 0 40px 12px rgba(255, 70, 40, 0.6); } }

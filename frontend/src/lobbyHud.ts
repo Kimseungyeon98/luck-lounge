@@ -1,5 +1,6 @@
 import type { Team } from './api';
 import type { ConnectionState, Member } from './net/loungeSocket';
+import { setSoundEnabled, soundEnabled } from './sound';
 
 export type MoveMode = 'tap' | 'stick';
 
@@ -33,6 +34,7 @@ export interface HudActions {
   onEmote(emoji: string): void;
   onTransferHost(playerId: string): void;
   onMoveMode(mode: MoveMode): void;
+  onStartBomb(): void;
 }
 
 /** 대기실 위에 올라가는 표시줄: 팀 이름·인원, 설정, 방장 메뉴, 말풍선 입력, 이모티콘 */
@@ -63,15 +65,22 @@ export function showLobbyHud(root: HTMLElement, team: Team, myId: string, action
   // 설정
   const tapBtn = h('button', { type: 'button' }, ['탭 이동']);
   const stickBtn = h('button', { type: 'button' }, ['조이스틱']);
+  const soundOn = h('button', { type: 'button' }, ['켜기']);
+  const soundOff = h('button', { type: 'button' }, ['끄기']);
   const settings = h('div', { className: 'sheet', hidden: true, role: 'dialog', ariaLabel: '설정' }, [
     h('h2', {}, ['설정']),
     h('div', { className: 'sheet-row' }, [h('span', {}, ['이동 방식']), h('span', { className: 'seg' }, [tapBtn, stickBtn])]),
+    h('div', { className: 'sheet-row' }, [h('span', {}, ['효과음']), h('span', { className: 'seg' }, [soundOn, soundOff])]),
     h('button', { type: 'button', className: 'sheet-close' }, ['닫기']),
   ]);
 
   // 방장 넘기기
   const memberList = h('div', { className: 'member-list' });
-  const hostSheet = h('div', { className: 'sheet', hidden: true, role: 'dialog', ariaLabel: '방장 넘기기' }, [
+  const startBomb = h('button', { type: 'button', className: 'sheet-start' }, ['💣 시한폭탄 시작']);
+  const hostSheet = h('div', { className: 'sheet', hidden: true, role: 'dialog', ariaLabel: '방장 메뉴' }, [
+    h('h2', {}, ['방장 메뉴']),
+    startBomb,
+    h('p', { className: 'sheet-note' }, ['대기실에 있는 사람 모두가 참가해요. 자리비움인 사람은 빠져요.']),
     h('h2', {}, ['방장 넘기기']),
     h('p', { className: 'sheet-note' }, ['방장은 게임 고르기를 시작하고 당첨자 수를 정해요.']),
     memberList,
@@ -98,6 +107,18 @@ export function showLobbyHud(root: HTMLElement, team: Team, myId: string, action
     saveMoveMode(m);
     actions.onMoveMode(m);
   };
+  const setSound = (v: boolean) => {
+    setSoundEnabled(v);
+    soundOn.setAttribute('aria-pressed', String(v));
+    soundOff.setAttribute('aria-pressed', String(!v));
+  };
+  soundOn.addEventListener('click', () => setSound(true));
+  soundOff.addEventListener('click', () => setSound(false));
+  setSound(soundEnabled());
+  startBomb.addEventListener('click', () => {
+    hostSheet.hidden = true;
+    actions.onStartBomb();
+  });
   tapBtn.addEventListener('click', () => setMode('tap'));
   stickBtn.addEventListener('click', () => setMode('stick'));
   setMode(moveMode);
@@ -175,6 +196,13 @@ export function showLobbyHud(root: HTMLElement, team: Team, myId: string, action
     },
     hideHint() {
       hint.hidden = true;
+    },
+    /** 게임 중에는 말하기·이모티콘·방장 메뉴를 숨긴다 */
+    setGameRunning(running: boolean) {
+      actionRow.hidden = running;
+      chatBar.hidden = true;
+      hint.hidden = running || hint.hidden;
+      hostBtn.style.visibility = running ? 'hidden' : '';
     },
     toast: showToast,
   };

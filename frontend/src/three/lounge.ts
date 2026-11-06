@@ -22,6 +22,8 @@ export interface Lounge {
   group: THREE.Group;
   booths: Booth[];
   signs: THREE.Sprite[];
+  /** 부스 전체 (시한폭탄 중에는 숨김) */
+  boothGroups: THREE.Group[];
   /** 걸어다닐 수 있는 범위 (M2) */
   bounds: { minX: number; maxX: number; minZ: number; maxZ: number };
 }
@@ -118,6 +120,7 @@ export function buildLounge(): Lounge {
   // 게임 부스
   const booths: Booth[] = [];
   const signs: THREE.Sprite[] = [];
+  const boothGroups: THREE.Group[] = [];
   const booth = (name: string, x: number, z: number, color: number, prop: THREE.Group, animate: (t: number) => void) => {
     const b = new THREE.Group();
     b.position.set(x, 0, z);
@@ -130,6 +133,7 @@ export function buildLounge(): Lounge {
     b.add(sign);
     signs.push(sign);
     group.add(b);
+    boothGroups.push(b);
     booths.push({ name, x, z, radius: 1.4, animate });
   };
 
@@ -156,5 +160,5 @@ export function buildLounge(): Lounge {
     balloon.scale.set(s, s * 1.15, s);
   });
 
-  return { group, booths, signs, bounds: { minX: -5.4, maxX: 5.4, minZ: -3.6, maxZ: 5.2 } };
+  return { group, booths, signs, boothGroups, bounds: { minX: -5.4, maxX: 5.4, minZ: -3.6, maxZ: 5.2 } };
 }

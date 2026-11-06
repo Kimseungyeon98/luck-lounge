@@ -6,6 +6,8 @@ import { blocked, buildLounge, type Lounge } from './lounge';
 
 type Mode = 'preview' | 'lobby';
 
+interface BombState { order: string[]; holder: string | null; center: THREE.Vector3; loser: string | null }
+
 const BUBBLE_SECONDS = 5;
 
 /** 라운지의 한 사람 (캐릭터 + 이름표 + 왕관·말풍선·자리비움) */
@@ -23,6 +25,10 @@ class Person {
   characterIndex = -1;
   nickname = '';
   away = false;
+
+  /** 폭탄을 들고 있으면 팔을 머리 위로, 이름표를 폭탄 위로 */
+  holding = false;
+  private soot?: THREE.Group;
 
   /** 서버가 알려 준 위치·방향·걷는 중 */
   readonly server = { x: 0, z: 0, f: 0.67, m: false, known: false };
@@ -63,7 +69,7 @@ class Person {
 
   private placeOverlays() {
     const top = this.rig?.height ?? 1.55;
-    if (this.label) this.label.position.y = top + 0.3;
+    if (this.label) this.label.position.y = top + (this.holding ? 1.45 : 0.3);
     if (this.crown) this.crown.position.y = top + 0.67;
     if (this.zz) this.zz.position.set(0.45, top + 0.05, 0);
     if (this.bubble) this.bubble.position.y = top + (this.crown ? 1.0 : 0.62) + this.bubble.scale.y / 2;
@@ -134,6 +140,39 @@ class Person {
     this.placeOverlays();
   }
 
+  setHolding(v: boolean) {
+    if (v === this.holding) return;
+    this.holding = v;
+    this.placeOverlays();
+  }
+
+  /** 당첨 연출: 얼굴에 검댕, 부스스한 머리 */
+  setSoot(v: boolean) {
+    if (v && !this.soot) {
+      const g = new THREE.Group();
+      const blot = new THREE.Mesh(new THREE.SphereGeometry(0.43, 24, 18), new THREE.MeshBasicMaterial({ color: 0x2a2a2a, transparent: true, opacity: 0.55 }));
+      blot.scale.set(1.01, 0.95, 0.97);
+      g.add(blot);
+      const fuzz = new THREE.MeshStandardMaterial({ color: 0x3a3a3a, roughness: 1 });
+      for (let k = 0; k < 7; k++) {
+        const a = (k / 7) * Math.PI * 2;
+        const puff = new THREE.Mesh(new THREE.SphereGeometry(0.13, 8, 6), fuzz);
+        puff.position.set(Math.cos(a) * 0.25, 0.42 + Math.sin(k) * 0.04, Math.sin(a) * 0.22);
+        g.add(puff);
+      }
+      g.position.y = (this.rig.height ?? 1.55) - 0.47;
+      this.rig.body.add(g);
+      this.soot = g;
+    } else if (!v && this.soot) {
+      this.rig.body.remove(this.soot);
+      this.soot = undefined;
+    }
+  }
+
+  get position() {
+    return this.group.position;
+  }
+
   get facing() {
     return this.rig.root;
   }
@@ -154,8 +193,8 @@ class Person {
     const swing = moving ? Math.sin(this.walkPhase) * 0.7 : 0;
     if (this.rig.legL) this.rig.legL.rotation.x = swing;
     if (this.rig.legR) this.rig.legR.rotation.x = -swing;
-    if (this.rig.armL) this.rig.armL.rotation.x = -swing * 0.8;
-    if (this.rig.armR) this.rig.armR.rotation.x = swing * 0.8;
+    if (this.rig.armL) this.rig.armL.rotation.x = this.holding ? -2.7 : -swing * 0.8;
+    if (this.rig.armR) this.rig.armR.rotation.x = this.holding ? -2.7 : swing * 0.8;
     this.rig.body.position.y = moving ? Math.abs(Math.sin(this.walkPhase)) * 0.08 : Math.sin(t * 2.2 + this.idlePhase) * 0.012;
     if (this.zz) this.zz.position.y = (this.rig.height ?? 1.55) + 0.05 + Math.sin(t * 2) * 0.06;
     if (this.bubble) {
@@ -201,6 +240,11 @@ export class LoungeView {
   private readonly floorPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
   private readonly marker: THREE.Mesh;
   private markerLeft = 0;
+  private bombState: BombState | null = null;
+  private readonly bomb: THREE.Group;
+  private readonly spark: THREE.Mesh;
+  private readonly puffs: { mesh: THREE.Mesh; v: THREE.Vector3; life: number }[] = [];
+  private shake = 0;
 
   /** 화면 오른쪽·아래 방향이 바닥에서 어느 쪽인지 (조이스틱 방향 변환용) */
   readonly screenRight = new THREE.Vector3(1, 0, -1).normalize();
@@ -233,6 +277,36 @@ export class LoungeView {
     this.marker.rotation.x = -Math.PI / 2;
     this.marker.position.y = 0.03;
     this.scene.add(this.marker);
+
+    // 시한폭탄과 폭발 연기
+    this.bomb = new THREE.Group();
+    const dark = new THREE.MeshStandardMaterial({ color: 0x23272e, roughness: 0.6 });
+    this.bomb.add(new THREE.Mesh(new THREE.SphereGeometry(0.3, 20, 16), dark));
+    const cap = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.09, 0.1, 12), new THREE.MeshStandardMaterial({ color: 0x555b66 }));
+    cap.position.y = 0.31;
+    this.bomb.add(cap);
+    const fuse = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 0.22, 6), new THREE.MeshStandardMaterial({ color: 0xc9a66b }));
+    fuse.position.set(0.05, 0.43, 0);
+    fuse.rotation.z = -0.4;
+    this.bomb.add(fuse);
+    this.spark = new THREE.Mesh(new THREE.SphereGeometry(0.06, 8, 6), new THREE.MeshBasicMaterial({ color: 0xffc233 }));
+    this.spark.position.set(0.1, 0.55, 0);
+    this.bomb.add(this.spark);
+    const glow = new THREE.PointLight(0xffaa33, 0.8, 2.5);
+    glow.position.copy(this.spark.position);
+    this.bomb.add(glow);
+    this.bomb.scale.setScalar(1.6);
+    this.bomb.visible = false;
+    this.scene.add(this.bomb);
+    for (let i = 0; i < 14; i++) {
+      const puff = new THREE.Mesh(
+        new THREE.SphereGeometry(0.35, 10, 8),
+        new THREE.MeshBasicMaterial({ color: i % 3 ? 0xeeeeee : 0xffb347, transparent: true, opacity: 0.9 }),
+      );
+      puff.visible = false;
+      this.scene.add(puff);
+      this.puffs.push({ mesh: puff, v: new THREE.Vector3(), life: 0 });
+    }
 
     this.me.set('', 0);
     this.me.group.position.set(1.4, 0, -2.2);
@@ -303,6 +377,56 @@ export class LoungeView {
     this.people.get(playerId)?.say(text, emoji);
   }
 
+  // ---------- 시한폭탄 ----------
+
+  bombStart(order: string[], holder: string, centerX: number, centerZ: number) {
+    for (const p of this.people.values()) p.setSoot(false);
+    this.bombState = { order, holder: null, center: new THREE.Vector3(centerX, 0, centerZ), loser: null };
+    this.bombHolder(holder);
+    this.bomb.visible = true;
+    const h = this.people.get(holder);
+    if (h) this.bomb.position.set(h.position.x, 2.05, h.position.z);
+    for (const g of this.lounge.boothGroups) g.visible = false;
+  }
+
+  bombHolder(id: string) {
+    if (!this.bombState) return;
+    for (const p of this.people.values()) p.setHolding(false);
+    this.bombState.holder = id;
+    this.people.get(id)?.setHolding(true);
+  }
+
+  bombExplode(loser: string) {
+    if (!this.bombState) return;
+    this.bombState.loser = loser;
+    this.bombState.holder = null;
+    for (const p of this.people.values()) p.setHolding(false);
+    this.bomb.visible = false;
+    const victim = this.people.get(loser);
+    if (victim) {
+      victim.setSoot(true);
+      for (const puff of this.puffs) {
+        puff.mesh.visible = true;
+        puff.mesh.position.set(victim.position.x, 1.6, victim.position.z);
+        puff.v.set((Math.random() - 0.5) * 3, 1 + Math.random() * 2, (Math.random() - 0.5) * 3);
+        puff.life = 0.9 + Math.random() * 0.4;
+        puff.mesh.scale.setScalar(0.4);
+      }
+    }
+    if (!this.reduceMotion) this.shake = 0.5;
+  }
+
+  bombFinish() {
+    this.bombState = null;
+    this.bomb.visible = false;
+    for (const p of this.people.values()) {
+      p.setHolding(false);
+      p.setSoot(false);
+    }
+    for (const g of this.lounge.boothGroups) g.visible = true;
+    for (const s of this.lounge.signs) s.visible = this.mode === 'lobby';
+  }
+
   /** 화면 좌표 → 바닥 좌표. 걸을 수 없는 곳이면 null */
   floorAt(clientX: number, clientY: number): { x: number; z: number } | null {
     const r = this.renderer.domElement.getBoundingClientRect();
@@ -324,7 +448,6 @@ export class LoungeView {
     for (const p of this.people.values()) if (p !== this.me) p.group.visible = lobby;
     for (const s of this.lounge.signs) s.visible = lobby;
     this.me.showLabel(lobby);
-    this.zoomGoal = lobby ? 1.05 : 2.3;
   }
 
   private resize() {
@@ -356,8 +479,30 @@ export class LoungeView {
     if (this.mode === 'preview') {
       if (!this.reduceMotion) this.me.facing.rotation.y += dt * 0.7;
       this.camGoal.set(mp.x, -0.35, mp.z);
+    } else if (this.bombState) {
+      // 게임 중에는 둥글게 선 사람들 전체가 보이게
+      this.camGoal.set(this.bombState.center.x, 0.2, this.bombState.center.z + 0.3);
     } else {
       this.camGoal.set(Math.max(-3.0, Math.min(2.6, mp.x - 0.5)), 0.3, Math.max(-3.2, Math.min(2.4, mp.z - 0.3)));
+    }
+    this.zoomGoal = this.mode === 'preview' ? 2.3 : this.bombState ? 0.95 : 1.05;
+    if (this.bombState?.holder) {
+      const h = this.people.get(this.bombState.holder);
+      if (h) {
+        const goal = new THREE.Vector3(h.position.x, 2.05 + Math.abs(Math.sin(this.t * 10)) * 0.06, h.position.z);
+        this.bomb.position.lerp(goal, 1 - Math.exp(-dt * 14));
+        this.bomb.rotation.y += dt * 2;
+        this.spark.scale.setScalar(0.8 + Math.sin(this.t * 25) * 0.35);
+      }
+    }
+    for (const puff of this.puffs) {
+      if (puff.life <= 0) continue;
+      puff.life -= dt;
+      puff.mesh.position.addScaledVector(puff.v, dt);
+      puff.v.multiplyScalar(0.92);
+      puff.mesh.scale.multiplyScalar(1 + dt * 1.8);
+      (puff.mesh.material as THREE.MeshBasicMaterial).opacity = Math.max(0, puff.life);
+      if (puff.life <= 0) puff.mesh.visible = false;
     }
     for (const p of this.people.values()) p.update(dt, this.t);
     if (!this.people.has(this.meId ?? '')) this.me.update(dt, this.t);
@@ -375,8 +520,15 @@ export class LoungeView {
     this.zoom += (this.zoomGoal - this.zoom) * k;
     this.camera.zoom = this.zoom;
     this.camera.updateProjectionMatrix();
-    this.camera.position.copy(this.camTarget).addScaledVector(this.camDir, 30);
-    this.camera.lookAt(this.camTarget);
+    let sx = 0;
+    let sz = 0;
+    if (this.shake > 0) {
+      this.shake -= dt;
+      sx = (Math.random() - 0.5) * this.shake * 0.6;
+      sz = (Math.random() - 0.5) * this.shake * 0.6;
+    }
+    this.camera.position.copy(this.camTarget).add(new THREE.Vector3(sx, 0, sz)).addScaledVector(this.camDir, 30);
+    this.camera.lookAt(this.camTarget.x + sx, this.camTarget.y, this.camTarget.z + sz);
 
     this.renderer.render(this.scene, this.camera);
     requestAnimationFrame(this.loop);
