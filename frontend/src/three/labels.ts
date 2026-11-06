@@ -50,3 +50,61 @@ export function disposeSprite(s: THREE.Sprite) {
   s.material.map?.dispose();
   s.material.dispose();
 }
+
+/** 말풍선 (40자까지, 줄바꿈) */
+export function chatBubble(text: string): THREE.Sprite {
+  const c = document.createElement('canvas');
+  const ctx = c.getContext('2d')!;
+  const font = `40px ${FONT}`;
+  ctx.font = font;
+  const lines: string[] = [];
+  let line = '';
+  for (const ch of Array.from(text)) {
+    if (ctx.measureText(line + ch).width > 420) {
+      lines.push(line);
+      line = ch;
+    } else {
+      line += ch;
+    }
+  }
+  if (line) lines.push(line);
+  const w = Math.min(470, Math.ceil(Math.max(...lines.map((l) => ctx.measureText(l).width))) + 48);
+  const h = lines.length * 50 + 34;
+  c.width = w;
+  c.height = h + 22;
+  ctx.font = font;
+  ctx.fillStyle = '#FFFFFF';
+  ctx.strokeStyle = 'rgba(24,32,43,0.15)';
+  ctx.lineWidth = 3;
+  roundRect(ctx, 2, 2, w - 4, h - 4, 26);
+  ctx.fill();
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(w / 2 - 14, h - 4);
+  ctx.lineTo(w / 2, h + 18);
+  ctx.lineTo(w / 2 + 14, h - 4);
+  ctx.fill();
+  ctx.fillStyle = '#18202B';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  lines.forEach((l, i) => ctx.fillText(l, w / 2, 46 + i * 50));
+  const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: canvasTexture(c), depthTest: false }));
+  sprite.scale.set(w / 170, c.height / 170, 1);
+  sprite.renderOrder = 12;
+  return sprite;
+}
+
+/** 이모지 하나짜리 아이콘 (왕관, 💤, 이모티콘) */
+export function iconSprite(emoji: string, size: number): THREE.Sprite {
+  const c = document.createElement('canvas');
+  c.width = c.height = 128;
+  const ctx = c.getContext('2d')!;
+  ctx.font = '96px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(emoji, 64, 70);
+  const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: canvasTexture(c), depthTest: false }));
+  sprite.scale.set(size, size, 1);
+  sprite.renderOrder = 11;
+  return sprite;
+}

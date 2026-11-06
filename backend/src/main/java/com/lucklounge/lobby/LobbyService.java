@@ -1,0 +1,194 @@
+package com.lucklounge.lobby;
+
+import java.time.Clock;
+import java.time.Instant;
+import java.util.Map;
+import java.util.Set;
+import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.context.SmartLifecycle;
+import org.springframework.context.event.EventListener;
+import org.springframework.messaging.simp.SimpMessagingTemplate;
+import org.springframework.stereotype.Service;
+import org.springframework.web.socket.messaging.SessionConnectedEvent;
+import org.springframework.web.socket.messaging.SessionDisconnectEvent;
+
+/**
+ * 팀별 대기실을 관리하고, 0.1초마다 위치를 계산해 방송한다.
+ * <ul>
+ *   <li>/topic/t/{팀}/lobby    : 위치 (움직임이 있을 때만, 최대 10회/초)</li>
+ *   <li>/topic/t/{팀}/presence : 접속자·방장·자리비움 (바뀔 때)</li>
+ *   <li>/topic/t/{팀}/events   : 말풍선, 이모티콘, 방장 변경 안내</li>
+ * </ul>
+ */
+@Service
+public class LobbyService implements SmartLifecycle {
+
+    private static final Logger log = LoggerFactory.getLogger(LobbyService.class);
+    static final long TICK_MS = 100;
+    static final Set<String> EMOTES = Set.of("👋", "😂", "🔥", "🙏", "😴", "👏");
+
+    public record PositionsMessage(java.util.List<LobbyRoom.PositionView> players) {
+    }
+
+    public record LobbyEvent(String type, UUID playerId, String text) {
+    }
+
+    private final Map<String, LobbyRoom> rooms = new ConcurrentHashMap<>();
+    private final SimpMessagingTemplate messaging;
+    private final ChatFilter chatFilter;
+    private final Clock clock;
+    private ScheduledExecutorService ticker;
+    private volatile boolean running;
+
+    LobbyService(SimpMessagingTemplate messaging, ChatFilter chatFilter, Clock clock) {
+        this.messaging = messaging;
+        this.chatFilter = chatFilter;
+        this.clock = clock;
+    }
+
+    public LobbyRoom room(String teamSlug) {
+        return rooms.computeIfAbsent(teamSlug, LobbyRoom::new);
+    }
+
+    // ---------- 접속과 퇴장 ----------
+
+    @EventListener
+    void onConnected(SessionConnectedEvent event) {
+        if (event.getUser() instanceof LoungePrincipal p) {
+            String sessionId = (String) event.getMessage().getHeaders().get("simpSessionId");
+            room(p.teamSlug()).join(sessionId, p.playerId(), p.nickname(), p.characterIndex());
+            broadcastPresence(p.teamSlug());
+        }
+    }
+
+    @EventListener
+    void onDisconnected(SessionDisconnectEvent event) {
+        for (LobbyRoom room : rooms.values()) {
+            if (room.contains(event.getSessionId())) {
+                if (room.leave(event.getSessionId(), clock.instant())) {
+                    broadcastPresence(room.teamSlug());
+                    broadcastPositions(room);
+                }
+                return;
+            }
+        }
+    }
+
+    // ---------- 휴대폰에서 온 요청 ----------
+
+    public void sync(String team) {
+        broadcastPresence(team);
+        broadcastPositions(room(team));
+    }
+
+    public void move(LoungePrincipal p, Double tx, Double tz, Double dx, Double dz) {
+        LobbyRoom room = room(p.teamSlug());
+        boolean wasAway = room.setAway(p.playerId(), false);
+        if (tx != null && tz != null) {
+            room.moveTo(p.playerId(), tx, tz);
+        } else {
+            room.steer(p.playerId(), dx == null ? 0 : dx, dz == null ? 0 : dz);
+        }
+        if (wasAway) {
+            broadcastPresence(p.teamSlug());
+        }
+    }
+
+    public void chat(LoungePrincipal p, String text) {
+        chatFilter.clean(text).ifPresent(clean -> {
+            LobbyRoom room = room(p.teamSlug());
+            if (room.allowChat(p.playerId(), clock.instant())) {
+                event(p.teamSlug(), new LobbyEvent("chat", p.playerId(), clean));
+            }
+        });
+    }
+
+    public void emote(LoungePrincipal p, String emoji) {
+        if (emoji != null && EMOTES.contains(emoji) && room(p.teamSlug()).allowChat(p.playerId(), clock.instant())) {
+            event(p.teamSlug(), new LobbyEvent("emote", p.playerId(), emoji));
+        }
+    }
+
+    public void away(LoungePrincipal p, boolean away) {
+        if (room(p.teamSlug()).setAway(p.playerId(), away)) {
+            broadcastPresence(p.teamSlug());
+        }
+    }
+
+    public void transferHost(LoungePrincipal p, UUID to) {
+        if (to != null && room(p.teamSlug()).transferHost(p.playerId(), to)) {
+            broadcastPresence(p.teamSlug());
+            event(p.teamSlug(), new LobbyEvent("host", to, "transfer"));
+        }
+    }
+
+    // ---------- 0.1초 틱 ----------
+
+    void tick(double dt) {
+        Instant now = clock.instant();
+        for (LobbyRoom room : rooms.values()) {
+            try {
+                LobbyRoom.TickResult r = room.tick(dt, now);
+                if (r.positionsChanged()) {
+                    broadcastPositions(room);
+                }
+                if (r.presenceChanged()) {
+                    broadcastPresence(room.teamSlug());
+                    room.host().ifPresent(h -> event(room.teamSlug(), new LobbyEvent("host", h, "auto")));
+                }
+            } catch (RuntimeException e) {
+                log.warn("대기실 틱 처리 실패: {}", room.teamSlug(), e);
+            }
+        }
+    }
+
+    private void broadcastPositions(LobbyRoom room) {
+        messaging.convertAndSend("/topic/t/" + room.teamSlug() + "/lobby", new PositionsMessage(room.positions()));
+    }
+
+    private void broadcastPresence(String team) {
+        messaging.convertAndSend("/topic/t/" + team + "/presence", room(team).presence());
+    }
+
+    private void event(String team, LobbyEvent e) {
+        messaging.convertAndSend("/topic/t/" + team + "/events", e);
+    }
+
+    // ---------- 틱 스레드 ----------
+
+    @Override
+    public void start() {
+        ticker = Executors.newSingleThreadScheduledExecutor(r -> {
+            Thread t = new Thread(r, "lobby-tick");
+            t.setDaemon(true);
+            return t;
+        });
+        long[] last = {System.nanoTime()};
+        ticker.scheduleAtFixedRate(() -> {
+            long now = System.nanoTime();
+            double dt = Math.min(0.25, (now - last[0]) / 1e9);
+            last[0] = now;
+            tick(dt);
+        }, TICK_MS, TICK_MS, TimeUnit.MILLISECONDS);
+        running = true;
+    }
+
+    @Override
+    public void stop() {
+        if (ticker != null) {
+            ticker.shutdownNow();
+        }
+        running = false;
+    }
+
+    @Override
+    public boolean isRunning() {
+        return running;
+    }
+}

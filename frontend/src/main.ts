@@ -2,6 +2,7 @@ import './style.css';
 import { api, ApiError } from './api';
 import { showEntry } from './entry';
 import { showLobbyHud } from './lobbyHud';
+import { attachLobbyInput } from './lobbyInput';
 import { connectLounge } from './net/loungeSocket';
 import { clearToken } from './storage';
 import type { LoungeView } from './three/LoungeView';
@@ -25,7 +26,7 @@ async function createView(): Promise<LoungeView | null> {
     const { LoungeView } = await import('./three/LoungeView');
     return new LoungeView(stage);
   } catch {
-    // WebGL을 못 쓰는 브라우저: 3D 없이 입장과 접속자 목록만
+    // WebGL을 못 쓰는 브라우저: 3D 없이 입장과 접속자 수만
     document.body.classList.add('no-3d');
     return null;
   }
@@ -47,29 +48,44 @@ async function boot() {
   }
   document.title = `${team.name} · 운빨 라운지`;
 
-  const viewPromise = createView();
-  const view = await viewPromise;
+  const view = await createView();
   const me = await showEntry(app, team, {
     onPreview: (nickname, characterIndex) => view?.preview(nickname, characterIndex),
   });
-
   view?.enterLobby(me);
-  const hud = showLobbyHud(app, team);
-  if (!view) hud.showFallbackList();
 
-  connectLounge(team.slug, me.token, {
-    onPresence: (players) => {
-      view?.setPresence(players);
-      hud.setPresence(players);
+  let socket: ReturnType<typeof connectLounge> | null = null;
+  const hud = showLobbyHud(app, team, me.playerId, {
+    onChat: (text) => socket?.chat(text),
+    onEmote: (emoji) => socket?.emote(emoji),
+    onTransferHost: (id) => socket?.transferHost(id),
+    onMoveMode: () => {},
+  });
+
+  socket = connectLounge(team.slug, me.token, {
+    onPresence: (p) => {
+      view?.setPresence(p.players, p.hostId);
+      hud.setPresence(p.players, p.hostId);
+    },
+    onPositions: (list) => view?.setPositions(list),
+    onEvent: (e) => {
+      if (e.type === 'chat') view?.say(e.playerId, e.text, false);
+      else if (e.type === 'emote') view?.say(e.playerId, e.text, true);
     },
     onState: (state) => {
       hud.setState(state);
+      if (state === 'online') socket?.away(document.hidden);
       if (state === 'rejected') {
         clearToken(team.slug);
         setTimeout(() => location.reload(), 1500);
       }
     },
   });
+
+  // 앱을 벗어나면 자리비움 (2단계 M3 결정)
+  document.addEventListener('visibilitychange', () => socket?.away(document.hidden));
+
+  if (view) attachLobbyInput(view, socket, () => hud.moveMode, () => hud.hideHint());
 }
 
 void boot();
