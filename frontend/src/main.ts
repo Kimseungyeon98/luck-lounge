@@ -4,6 +4,7 @@ import { showEntry } from './entry';
 import { showLobbyHud } from './lobbyHud';
 import { attachLobbyInput } from './lobbyInput';
 import { createBombHud } from './bombHud';
+import { createMatchHud } from './matchHud';
 import { connectLounge } from './net/loungeSocket';
 import { unlockAudio } from './sound';
 import { clearToken } from './storage';
@@ -67,9 +68,11 @@ async function boot() {
     onEmote: (emoji) => socket?.emote(emoji),
     onTransferHost: (id) => socket?.transferHost(id),
     onMoveMode: () => {},
-    onStartBomb: () => socket?.startBomb(),
+    onStartMatch: (winners, practice) => socket?.startMatch(winners, practice),
   });
-  const bombHud = createBombHud(app, me.playerId, (id) => names.get(id) ?? '누군가', () => socket?.passBomb());
+  const nameOf = (id: string) => names.get(id) ?? '누군가';
+  const bombHud = createBombHud(app, me.playerId, nameOf, () => socket?.passBomb());
+  const matchHud = createMatchHud(app, view, team.name, me.playerId, nameOf, hud.toast);
 
   socket = connectLounge(team.slug, me.token, {
     onPresence: (p) => {
@@ -84,7 +87,6 @@ async function boot() {
     },
     onBomb: (b) => {
       if (b.type === 'start' && b.order && b.holder) {
-        hud.setGameRunning(true);
         view?.bombStart(b.order, b.holder, b.centerX ?? 0, b.centerZ ?? 0);
         bombHud.start(b.order, b.holder);
       } else if (b.type === 'holder' && b.holder) {
@@ -97,6 +99,17 @@ async function boot() {
         view?.bombFinish();
         bombHud.finish();
         hud.setGameRunning(false);
+      }
+    },
+    onMatch: (m) => {
+      matchHud.handle(m, (running) => hud.setGameRunning(running));
+      if (m.type === 'roundEnd') {
+        bombHud.roundEnd(2800);
+        window.setTimeout(() => view?.bombRoundEnd(), 300);
+      }
+      if (m.type === 'finish') {
+        bombHud.finish();
+        view?.bombFinish();
       }
     },
     onNotice: (n) => {

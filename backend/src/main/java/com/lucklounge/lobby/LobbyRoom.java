@@ -64,7 +64,7 @@ public class LobbyRoom {
     }
 
     /** 틱 한 번의 결과: 위치가 바뀌었는지, 접속자·방장 정보가 바뀌었는지, 시한폭탄에 일어난 일 */
-    public record TickResult(boolean positionsChanged, boolean presenceChanged, List<BombGame.Event> bombEvents) {
+    public record TickResult(boolean positionsChanged, boolean presenceChanged, List<Match.Event> matchEvents) {
     }
 
     public enum StartFailure { NOT_HOST, ALREADY_RUNNING, NOT_ENOUGH_PLAYERS }
@@ -80,7 +80,7 @@ public class LobbyRoom {
     private UUID hostId;
     private Instant hostAbsentSince;
     private final Random random;
-    private BombGame bomb;
+    private Match match;
 
     public LobbyRoom(String teamSlug) {
         this(teamSlug, new SecureRandom());
@@ -147,7 +147,7 @@ public class LobbyRoom {
     /** 탭 이동: 목적지 */
     public synchronized void moveTo(UUID playerId, double tx, double tz) {
         Member m = onlineMember(playerId);
-        if (m == null || playingBomb(playerId) || !Double.isFinite(tx) || !Double.isFinite(tz)) {
+        if (m == null || locked(playerId) || !Double.isFinite(tx) || !Double.isFinite(tz)) {
             return;
         }
         m.targetX = clamp(tx, Obstacles.MIN_X, Obstacles.MAX_X);
@@ -159,7 +159,7 @@ public class LobbyRoom {
     /** 조이스틱: 방향과 세기(최대 1). 0이면 멈춤 */
     public synchronized void steer(UUID playerId, double dx, double dz) {
         Member m = onlineMember(playerId);
-        if (m == null || playingBomb(playerId) || !Double.isFinite(dx) || !Double.isFinite(dz)) {
+        if (m == null || locked(playerId) || !Double.isFinite(dx) || !Double.isFinite(dz)) {
             return;
         }
         double len = Math.hypot(dx, dz);
@@ -219,14 +219,16 @@ public class LobbyRoom {
             m.moving = step(m, dt);
             moved |= m.moving || was;
         }
-        List<BombGame.Event> bombEvents = List.of();
-        if (bomb != null) {
-            bombEvents = bomb.advanceTo(now, id -> {
-                Member m = members.get(id);
-                return m != null && m.online();
-            });
-            if (bombEvents.stream().anyMatch(e -> e instanceof BombGame.Finished)) {
-                bomb = null;
+        List<Match.Event> matchEvents = List.of();
+        if (match != null) {
+            matchEvents = match.advanceTo(now, this::boothOf, eligiblePlayers(),
+                    id -> {
+                        Member m = members.get(id);
+                        return m != null && m.online();
+                    },
+                    this::placeInCircle, this::stepOut);
+            if (matchEvents.stream().anyMatch(e -> e instanceof Match.Finished)) {
+                match = null;
             }
         }
         boolean presence = false;
@@ -241,33 +243,34 @@ public class LobbyRoom {
                 arrivalCounter = 0;
             }
         }
-        return new TickResult(moved, presence, bombEvents);
+        return new TickResult(moved, presence, matchEvents);
     }
 
-    // ---------- 시한폭탄 ----------
+    // ---------- 내기 (투표 → 연속 판) ----------
 
-    /** 방장이 시작. 대기실에 있는(자리비움 아닌) 사람 모두 참가, 2명 이상이어야 한다. */
-    public synchronized Object startBomb(UUID by, Instant now) {
+    /** 부스 위치. 프론트엔드 lounge.ts 의 부스와 같은 자리 */
+    static final double BOOTH_RADIUS = 1.45;
+    static final double BOMB_BOOTH_X = -3.0;
+    static final double BALLOON_BOOTH_X = 3.0;
+    static final double BOOTH_Z = 2.6;
+
+    /** 방장이 게임 고르기를 시작. 10초 투표 후 진행된다. */
+    public synchronized Object startMatch(UUID by, int winnersTarget, boolean practice, Instant now) {
         if (!by.equals(hostId)) {
             return StartFailure.NOT_HOST;
         }
-        if (bomb != null) {
+        if (match != null) {
             return StartFailure.ALREADY_RUNNING;
         }
-        List<UUID> players = members.values().stream()
-                .filter(m -> m.online() && !m.away)
-                .sorted(Comparator.comparingLong(m -> m.arrivalOrder))
-                .map(m -> m.id)
-                .toList();
-        if (players.size() < 2) {
+        if (eligiblePlayers().size() < 2) {
             return StartFailure.NOT_ENOUGH_PLAYERS;
         }
-        bomb = BombGame.start(players, now, random);
-        placeInCircle(bomb.order());
-        return new BombGame.Started(bomb.order(), bomb.holder(), BOMB_CENTER_X, BOMB_CENTER_Z);
+        match = new Match(Math.max(1, winnersTarget), practice, now, random);
+        return match.started();
     }
 
     public synchronized BombGame.PassResult passBomb(UUID playerId, Instant now) {
+        BombGame bomb = match == null ? null : match.bomb();
         if (bomb == null) {
             return BombGame.PassResult.OVER;
         }
@@ -275,19 +278,66 @@ public class LobbyRoom {
     }
 
     public synchronized Optional<UUID> bombHolder() {
+        BombGame bomb = match == null ? null : match.bomb();
         return bomb == null || bomb.exploded() ? Optional.empty() : Optional.of(bomb.holder());
     }
 
     /** 진행 중인 판 (늦게 들어온 사람, 재접속한 사람에게 다시 알려 줄 때) */
-    public synchronized Optional<BombGame.Started> bombInProgress() {
-        if (bomb == null || bomb.exploded()) {
-            return Optional.empty();
-        }
-        return Optional.of(new BombGame.Started(bomb.order(), bomb.holder(), BOMB_CENTER_X, BOMB_CENTER_Z));
+    public synchronized Optional<Match.RoundStarted> roundInProgress() {
+        return match == null ? Optional.empty() : Optional.ofNullable(match.currentRound());
     }
 
-    private boolean playingBomb(UUID id) {
-        return bomb != null && bomb.participates(id);
+    /** 투표 중이면 남은 시간 */
+    public synchronized Optional<Match.VoteStarted> voteInProgress(Instant now) {
+        if (match == null || match.phase() != Match.Phase.VOTING) {
+            return Optional.empty();
+        }
+        long left = Math.max(0, Duration.between(now, match.phaseEndsAt()).toMillis());
+        return Optional.of(new Match.VoteStarted(left, match.winnersTarget(), match.practice()));
+    }
+
+    private boolean locked(UUID id) {
+        return match != null && match.locks(id);
+    }
+
+    /** 게임에 참가할 수 있는 사람: 접속 중이고 자리비움이 아님. 먼저 온 순서 */
+    private List<UUID> eligiblePlayers() {
+        return members.values().stream()
+                .filter(m -> m.online() && !m.away)
+                .sorted(Comparator.comparingLong(m -> m.arrivalOrder))
+                .map(m -> m.id)
+                .toList();
+    }
+
+    private Match.Booth boothOf(UUID id) {
+        Member m = members.get(id);
+        if (m == null) {
+            return null;
+        }
+        if (Math.hypot(m.x - BOMB_BOOTH_X, m.z - BOOTH_Z) < BOOTH_RADIUS) {
+            return Match.Booth.BOMB;
+        }
+        if (Math.hypot(m.x - BALLOON_BOOTH_X, m.z - BOOTH_Z) < BOOTH_RADIUS) {
+            return Match.Booth.BALLOON;
+        }
+        return null;
+    }
+
+    /** 당첨자는 원 밖으로 걸어 나간다 */
+    private void stepOut(UUID id) {
+        Member m = members.get(id);
+        if (m == null) {
+            return;
+        }
+        double dx = m.x - BOMB_CENTER_X;
+        double dz = m.z - BOMB_CENTER_Z;
+        double len = Math.max(0.01, Math.hypot(dx, dz));
+        double tx = m.x + dx / len * 1.3;
+        double tz = m.z + dz / len * 1.3;
+        if (!Obstacles.blocked(tx, tz)) {
+            m.targetX = tx;
+            m.targetZ = tz;
+        }
     }
 
     /** 참가자를 순서대로 둥글게 세운다 */

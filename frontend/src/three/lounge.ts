@@ -155,7 +155,7 @@ export function buildLounge(): Lounge {
   const balloon = mesh(new THREE.SphereGeometry(0.55, 20, 16), 0xe84b5f, -0.05, 1.75, 0);
   balloonProp.add(balloon);
   balloonProp.add(mesh(new THREE.ConeGeometry(0.09, 0.14, 8), 0xe84b5f, -0.05, 1.08, 0));
-  booth('풍선', 3.0, 2.6, 0x2f6bff, balloonProp, (t) => {
+  booth('풍선 · 준비 중', 3.0, 2.6, 0x2f6bff, balloonProp, (t) => {
     const s = 1 + Math.sin(t * 1.6) * 0.06;
     balloon.scale.set(s, s * 1.15, s);
   });

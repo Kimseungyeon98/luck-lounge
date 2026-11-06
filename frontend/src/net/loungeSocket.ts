@@ -17,6 +17,24 @@ export interface BombMessage {
   heldMs: number | null;
 }
 export interface Notice { type: string; message: string }
+export interface MatchMessage {
+  type: 'vote' | 'voteResult' | 'cancel' | 'round' | 'roundEnd' | 'summary' | 'finish';
+  endsInMs?: number;
+  winnersTarget?: number;
+  practice?: boolean;
+  bomb?: number;
+  balloon?: number;
+  abstain?: number;
+  won?: 'BOMB' | 'BALLOON';
+  participants?: number;
+  message?: string;
+  round?: number;
+  loser?: string;
+  heldMs?: number;
+  remaining?: number;
+  more?: boolean;
+  winners?: { playerId: string; round: number; heldMs: number }[];
+}
 
 export interface LoungeSocketHandlers {
   onPresence(p: Presence): void;
@@ -24,6 +42,7 @@ export interface LoungeSocketHandlers {
   onEvent(e: LobbyEvent): void;
   onBomb(m: BombMessage): void;
   onNotice(n: Notice): void;
+  onMatch(m: MatchMessage): void;
   onState(state: ConnectionState): void;
 }
 
@@ -34,7 +53,7 @@ export interface LoungeSocket {
   emote(emoji: string): void;
   away(away: boolean): void;
   transferHost(playerId: string): void;
-  startBomb(): void;
+  startMatch(winnersTarget: number, practice: boolean): void;
   passBomb(): void;
   close(): void;
 }
@@ -65,6 +84,7 @@ export function connectLounge(slug: string, token: string, h: LoungeSocketHandle
     client.subscribe(`/topic/t/${slug}/events`, json<LobbyEvent>(h.onEvent));
     client.subscribe(`/topic/t/${slug}/bomb`, json<BombMessage>(h.onBomb));
     client.subscribe('/user/queue/me', json<Notice>(h.onNotice));
+    client.subscribe(`/topic/t/${slug}/match`, json<MatchMessage>(h.onMatch));
     client.publish({ destination: `/app/t/${slug}/presence/sync`, body: '' });
   };
 
@@ -93,7 +113,7 @@ export function connectLounge(slug: string, token: string, h: LoungeSocketHandle
     emote: (emoji) => send('emote', { emoji }),
     away: (away) => send('away', { away }),
     transferHost: (playerId) => send('host/transfer', { playerId }),
-    startBomb: () => send('bomb/start', {}),
+    startMatch: (winnersTarget, practice) => send('match/start', { winnersTarget, practice }),
     passBomb: () => send('bomb/pass', {}),
     close: () => void client.deactivate(),
   };

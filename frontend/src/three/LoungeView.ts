@@ -241,6 +241,7 @@ export class LoungeView {
   private readonly marker: THREE.Mesh;
   private markerLeft = 0;
   private bombState: BombState | null = null;
+  private voting = false;
   private readonly bomb: THREE.Group;
   private readonly spark: THREE.Mesh;
   private readonly puffs: { mesh: THREE.Mesh; v: THREE.Vector3; life: number }[] = [];
@@ -380,7 +381,7 @@ export class LoungeView {
   // ---------- 시한폭탄 ----------
 
   bombStart(order: string[], holder: string, centerX: number, centerZ: number) {
-    for (const p of this.people.values()) p.setSoot(false);
+    this.voting = false;
     this.bombState = { order, holder: null, center: new THREE.Vector3(centerX, 0, centerZ), loser: null };
     this.bombHolder(holder);
     this.bomb.visible = true;
@@ -414,6 +415,30 @@ export class LoungeView {
       }
     }
     if (!this.reduceMotion) this.shake = 0.5;
+  }
+
+  /** 판 사이: 폭탄만 치우고 당첨자 검댕은 내기가 끝날 때까지 남겨 둔다 */
+  bombRoundEnd() {
+    this.bomb.visible = false;
+    for (const p of this.people.values()) p.setHolding(false);
+  }
+
+  /** 투표 중에는 두 부스가 다 보이게 카메라를 넓힌다 */
+  setVoting(v: boolean) {
+    this.voting = v;
+    for (const p of this.people.values()) p.setSoot(false);
+  }
+
+  /** 지금 부스 위에 서 있는 인원 (화면 표시용. 실제 집계는 서버가 한다) */
+  voteCounts(): { bomb: number; balloon: number; abstain: number } {
+    const c = { bomb: 0, balloon: 0, abstain: 0 };
+    for (const p of this.people.values()) {
+      const pos = p.position;
+      if (Math.hypot(pos.x + 3.0, pos.z - 2.6) < 1.45) c.bomb++;
+      else if (Math.hypot(pos.x - 3.0, pos.z - 2.6) < 1.45) c.balloon++;
+      else c.abstain++;
+    }
+    return c;
   }
 
   bombFinish() {
@@ -479,13 +504,15 @@ export class LoungeView {
     if (this.mode === 'preview') {
       if (!this.reduceMotion) this.me.facing.rotation.y += dt * 0.7;
       this.camGoal.set(mp.x, -0.35, mp.z);
+    } else if (this.voting) {
+      this.camGoal.set(0, 0.3, 2.3);
     } else if (this.bombState) {
       // 게임 중에는 둥글게 선 사람들 전체가 보이게
       this.camGoal.set(this.bombState.center.x, 0.2, this.bombState.center.z + 0.3);
     } else {
       this.camGoal.set(Math.max(-3.0, Math.min(2.6, mp.x - 0.5)), 0.3, Math.max(-3.2, Math.min(2.4, mp.z - 0.3)));
     }
-    this.zoomGoal = this.mode === 'preview' ? 2.3 : this.bombState ? 0.95 : 1.05;
+    this.zoomGoal = this.mode === 'preview' ? 2.3 : this.voting ? 0.64 : this.bombState ? 0.95 : 1.05;
     if (this.bombState?.holder) {
       const h = this.people.get(this.bombState.holder);
       if (h) {

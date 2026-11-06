@@ -38,7 +38,7 @@ class JoinApiTest {
 
     @BeforeEach
     void setUp() {
-        jdbc.execute("truncate player_device, player");
+        jdbc.execute("truncate game_round_player, game_round, game_session, player_device, player cascade");
         slug = teams.findAll().getFirst().getSlug();
     }
 

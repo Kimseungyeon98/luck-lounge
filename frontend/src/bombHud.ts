@@ -123,6 +123,12 @@ export function createBombHud(root: HTMLElement, myId: string, nameOf: (id: stri
         result.hidden = false;
       }, 1100);
     },
+    /** 판 사이: 결과 카드를 잠깐 보여 준 뒤 숨긴다 (다음 판 안내는 matchHud) */
+    roundEnd(delayMs: number) {
+      clearInterval(timer);
+      clearInterval(tickTimer);
+      window.setTimeout(() => { layer.hidden = true; result.hidden = true; }, delayMs);
+    },
     /** 판이 끝나 대기실로 */
     finish() {
       clearInterval(timer);
