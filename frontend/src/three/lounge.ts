@@ -10,6 +10,14 @@ export interface Booth {
   animate(t: number): void;
 }
 
+/** 걸을 수 없는 곳. 서버 backend/.../lobby/Obstacles.java 와 같은 값이어야 한다. */
+export function blocked(x: number, z: number): boolean {
+  if (x < -5.4 || x > 5.4 || z < -3.6 || z > 5.2) return true;
+  const circles = [[-0.4, -2.4, 0.95], [-5.2, -4.4, 0.6], [5.1, -4.4, 0.6], [-5.2, 4.7, 0.6], [5.1, 4.7, 0.6], [-3.0, 2.4, 0.75], [3.0, 2.4, 0.75]];
+  for (const [cx, cz, r] of circles) if (Math.hypot(x - cx, z - cz) < r) return true;
+  return x > -2.6 && x < 1.8 && z > -5.0 && z < -3.75;
+}
+
 export interface Lounge {
   group: THREE.Group;
   booths: Booth[];

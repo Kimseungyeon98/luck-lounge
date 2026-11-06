@@ -136,3 +136,67 @@ input[type="text"]:focus { outline: none; border-color: var(--focus); box-shadow
 @media (prefers-reduced-motion: reduce) {
   * { transition: none !important; }
 }
+
+/* ---------- M2: 대기실 조작 ---------- */
+.hud-buttons { display: flex; gap: 6px; align-items: center; pointer-events: auto; }
+.icon-btn {
+  width: 44px; height: 44px; border-radius: 50%; border: 0;
+  background: rgba(255, 255, 255, 0.95); box-shadow: 0 4px 12px rgba(24, 32, 43, 0.15);
+  font-size: 19px; cursor: pointer; color: var(--ink);
+}
+.hud-toast {
+  position: fixed; top: calc(max(14px, env(safe-area-inset-top)) + 64px); left: 50%; transform: translateX(-50%);
+  background: rgba(24, 32, 43, 0.86); color: #ffffff; font-size: 13px; border-radius: 12px; padding: 7px 14px;
+  width: max-content; max-width: 86%; text-align: center; pointer-events: none;
+}
+.hud-bottom { display: flex; flex-direction: column; gap: 8px; align-items: stretch; pointer-events: none; }
+.hud-bottom > * { pointer-events: auto; }
+.hud-bottom .hud-hint { pointer-events: none; }
+.hud-actions { display: flex; justify-content: center; gap: 8px; }
+.pill {
+  width: 50px; height: 50px; border-radius: 50%; border: 0;
+  background: rgba(255, 255, 255, 0.96); box-shadow: 0 4px 12px rgba(24, 32, 43, 0.15);
+  font-size: 21px; cursor: pointer;
+}
+.pill.wide { width: auto; padding: 0 18px; border-radius: 999px; font-size: 15px; font-weight: 700; color: var(--ink); }
+.chatbar {
+  display: flex; gap: 6px; align-items: center;
+  background: rgba(255, 255, 255, 0.98); border-radius: 16px; padding: 6px;
+  box-shadow: 0 6px 18px rgba(24, 32, 43, 0.2);
+  max-width: 520px; width: 100%; align-self: center;
+}
+.chatbar input { flex: 1; min-width: 0; font: inherit; font-size: 16px; border: 0; padding: 9px 8px; background: transparent; color: var(--ink); }
+.chatbar input:focus { outline: none; }
+.chat-count { font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.chat-send { border: 0; border-radius: 12px; background: var(--accent); color: #ffffff; font-weight: 700; padding: 10px 14px; cursor: pointer; }
+.chat-x { border: 0; background: transparent; color: var(--muted); padding: 8px; cursor: pointer; font-size: 15px; }
+.sheet {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 10;
+  max-width: 520px; margin: 0 auto;
+  background: #ffffff; border-radius: 22px 22px 0 0;
+  padding: 18px max(16px, env(safe-area-inset-right)) max(22px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
+  box-shadow: 0 -10px 30px rgba(24, 32, 43, 0.2);
+  display: flex; flex-direction: column; gap: 12px; pointer-events: auto;
+}
+.sheet h2 { margin: 0; font-size: 17px; }
+.sheet-row { display: flex; justify-content: space-between; align-items: center; gap: 8px; font-size: 15px; }
+.sheet-note { margin: 0; font-size: 13px; color: var(--muted); }
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+.seg button { border: 0; background: #ffffff; padding: 8px 14px; font-size: 14px; cursor: pointer; color: var(--ink); }
+.seg button[aria-pressed="true"] { background: var(--ink); color: #ffffff; }
+.sheet-close { border: 0; border-radius: 12px; padding: 12px; background: var(--bg); font-weight: 700; cursor: pointer; color: var(--ink); }
+.member-list { display: flex; flex-direction: column; gap: 6px; max-height: 50vh; overflow-y: auto; }
+.member-list button {
+  display: flex; justify-content: space-between; align-items: center;
+  border: 1px solid var(--line); background: #ffffff; border-radius: 12px; padding: 11px 14px; font-size: 15px; cursor: pointer; color: var(--ink);
+}
+.member-list button span { font-size: 13px; color: var(--accent); font-weight: 700; }
+.stick {
+  position: fixed; z-index: 4; width: 104px; height: 104px; margin: -52px 0 0 -52px; border-radius: 50%;
+  border: 2px solid rgba(24, 32, 43, 0.35); background: rgba(255, 255, 255, 0.25); pointer-events: none;
+}
+.stick i { position: absolute; left: 50%; top: 50%; width: 44px; height: 44px; margin: -22px 0 0 -22px; border-radius: 50%; background: rgba(24, 32, 43, 0.55); }
+.icon-btn:focus-visible, .pill:focus-visible, .chat-send:focus-visible, .seg button:focus-visible, .sheet-close:focus-visible, .member-list button:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+/* 대기실 표시줄은 빈 곳을 누르면 아래 3D 화면(바닥)으로 전달되어야 한다 */
+#app > .hud { pointer-events: none; }
+.hud-top { pointer-events: none; }

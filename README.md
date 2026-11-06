@@ -12,8 +12,8 @@
 
 | 단계 | 내용 | 상태 |
 |---|---|---|
-| M1 | 뼈대, 팀 링크, 닉네임 입장, 3D 메인 화면·대기실, 무료 서버 배포 | 진행 중 |
-| M2 | 대기실 캐릭터 이동(탭·조이스틱), 위치 동기화, 채팅, 방장 | |
+| M1 | 뼈대, 팀 링크, 닉네임 입장, 3D 메인 화면·대기실, 배포 구성 | 완료 |
+| M2 | 대기실 캐릭터 이동(탭·조이스틱), 위치 동기화, 말풍선 채팅, 방장, 자리비움 | 진행 중 |
 | M3 | 시한폭탄 돌리기 | |
 | M4 | 걸어서 투표, 연속 판, 결과 저장 | |
 | M5 | 풍선 불기, 통계 | |
@@ -33,7 +33,7 @@ Caddy ── Spring Boot 4 (Java 25) ── PostgreSQL
 
 | 경로 | 내용 |
 |---|---|
-| `backend/` | Spring Boot. `team`, `player`, `lobby` 패키지 |
+| `backend/` | Spring Boot. `team`, `player`, `lobby`(위치 계산·말풍선·방장) 패키지 |
 | `frontend/` | Three.js + Vite. 3D 라운지 위에 입장 카드(DOM)와 대기실 표시줄 |
 | `deploy/` | Dockerfile, docker-compose, Caddyfile, 팀 링크·백업 스크립트 |
 | `docs/oracle-setup.md` | 무료 서버 준비 안내 |

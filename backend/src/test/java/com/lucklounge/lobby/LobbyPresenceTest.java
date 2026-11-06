@@ -68,10 +68,40 @@ class LobbyPresenceTest {
         assertThat(parkInbox.poll(5, TimeUnit.SECONDS)).contains("김대리").contains("박과장");
         assertThat(kimInbox.poll(5, TimeUnit.SECONDS)).contains("박과장");
 
+        // 먼저 들어온 김대리가 방장
+        String kimId = joinService.me(slug, kim).orElseThrow().playerId().toString();
+        Thread.sleep(500);
+        kimInbox.clear();
+
         parkSession.disconnect();
         String afterLeave = kimInbox.poll(5, TimeUnit.SECONDS);
-        assertThat(afterLeave).contains("김대리").doesNotContain("박과장");
+        assertThat(afterLeave).contains("김대리").doesNotContain("박과장").contains("\"hostId\":\"" + kimId + "\"");
         kimSession.disconnect();
+    }
+
+    @Test
+    void 말풍선은_금칙어를_가려서_모두에게_보낸다() throws Exception {
+        String kim = joinService.join(slug, null, new JoinCommand("김대리", 0, null)).token();
+        StompSession session = connect(kim);
+        BlockingQueue<String> events = new LinkedBlockingQueue<>();
+        session.subscribe("/topic/t/" + slug + "/events", new StompFrameHandler() {
+            @Override
+            public Type getPayloadType(StompHeaders headers) {
+                return String.class;
+            }
+
+            @Override
+            public void handleFrame(StompHeaders headers, Object payload) {
+                events.add((String) payload);
+            }
+        });
+        Thread.sleep(300);
+        StompHeaders headers = new StompHeaders();
+        headers.setDestination("/app/t/" + slug + "/chat");
+        headers.setContentType(org.springframework.util.MimeTypeUtils.APPLICATION_JSON);
+        session.send(headers, "{\"text\":\"오늘은 바보처럼 안 진다\"}");
+        assertThat(events.poll(5, TimeUnit.SECONDS)).contains("\"type\":\"chat\"").contains("오늘은 **처럼 안 진다");
+        session.disconnect();
     }
 
     @Test
