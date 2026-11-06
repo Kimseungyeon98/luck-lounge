@@ -11,7 +11,8 @@ function h<K extends keyof HTMLElementTagNameMap>(tag: K, props: Record<string, 
  * 내기 진행 표시: 투표 카운트다운과 부스별 인원, 결과 발표, 판 사이 안내, 오늘의 결과 요약.
  * 시한폭탄 한 판 안의 표시는 bombHud 가 맡는다.
  */
-export function createMatchHud(root: HTMLElement, view: LoungeView | null, teamName: string, myId: string, nameOf: (id: string) => string, toast: (t: string) => void) {
+export function createMatchHud(root: HTMLElement, view: LoungeView | null, teamName: string, myId: string, nameOf: (id: string) => string, toast: (t: string) => void, openStats: () => void) {
+  const GAME_NAME = { BOMB: '시한폭탄', BALLOON: '풍선 불기' } as const;
   const count = h('div', { className: 'vote-count' });
   const tBomb = h('span', { className: 'b' });
   const tBalloon = h('span', { className: 'p' });
@@ -23,10 +24,12 @@ export function createMatchHud(root: HTMLElement, view: LoungeView | null, teamN
   const sumList = h('ol');
   const sumMeta = h('p', { className: 'sum-meta' });
   const copy = h('button', { type: 'button' }, ['결과 복사']);
+  const stats = h('button', { type: 'button' }, ['통계 보기']);
   const close = h('button', { type: 'button', className: 'primary2' }, ['닫기']);
   const summary = h('div', { className: 'match-summary', hidden: true, role: 'dialog', ariaLabel: '오늘의 결과' }, [
-    h('h2', {}, ['오늘의 커피 담당']), sumList, sumMeta, h('div', { className: 'sum-btns' }, [copy, close]),
+    h('h2', {}, ['오늘의 커피 담당']), sumList, sumMeta, h('div', { className: 'sum-btns three' }, [copy, stats, close]),
   ]);
+  stats.addEventListener('click', () => { summary.hidden = true; openStats(); });
   root.append(voteBar, banner, summary);
 
   let voteTimer = 0;
@@ -83,11 +86,8 @@ export function createMatchHud(root: HTMLElement, view: LoungeView | null, teamN
           stopVote();
           const tally = `시한폭탄 ${m.bomb} · 풍선 ${m.balloon} · 기권 ${m.abstain}`;
           const tie = m.bomb === m.balloon;
-          if (m.won === 'BALLOON') {
-            showBanner('풍선이 이겼어요!', `${tally} · 풍선 게임은 곧 열려요. 오늘은 시한폭탄으로 할게요`, 4000);
-          } else {
-            showBanner(`${tie ? '동률이라 무작위로 ' : ''}시한폭탄 결정!`, `${tally} · ${m.participants}명 참가 · 당첨 ${m.winnersTarget}명`, 3000);
-          }
+          const game = GAME_NAME[m.gameType ?? 'BOMB'];
+          showBanner(`${tie ? '동률이라 무작위로 ' : ''}${game} 결정!`, `${tally} · ${m.participants}명 참가 · 당첨 ${m.winnersTarget}명`, 3000);
           break;
         }
         case 'cancel':
@@ -108,9 +108,10 @@ export function createMatchHud(root: HTMLElement, view: LoungeView | null, teamN
         case 'summary': {
           const winners = m.winners ?? [];
           sumList.replaceChildren(...winners.map((w) => h('li', {}, [`${w.playerId === myId ? '나' : nameOf(w.playerId)} (${w.round}판)`])));
-          sumMeta.textContent = `시한폭탄 · ${m.participants}명 참가 · ${m.practice ? '연습판 (통계에서 빠져요)' : '기록에 저장했어요'}`;
+          const game = GAME_NAME[m.gameType ?? 'BOMB'];
+          sumMeta.textContent = `${game} · ${m.participants}명 참가 · ${m.practice ? '연습판 (통계에서 빠져요)' : '기록에 저장했어요'}`;
           const d = new Date();
-          copyText = `[운빨 라운지] ${d.getMonth() + 1}월 ${d.getDate()}일 ${teamName} 커피 담당: ${winners.map((w) => nameOf(w.playerId)).join(', ')} (시한폭탄, ${m.participants}명 참가)`;
+          copyText = `[운빨 라운지] ${d.getMonth() + 1}월 ${d.getDate()}일 ${teamName} 커피 담당: ${winners.map((w) => nameOf(w.playerId)).join(', ')} (${game}, ${m.participants}명 참가)`;
           copy.textContent = '결과 복사';
           window.setTimeout(() => { summary.hidden = false; }, 2900);
           break;

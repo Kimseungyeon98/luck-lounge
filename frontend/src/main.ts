@@ -5,6 +5,8 @@ import { showLobbyHud } from './lobbyHud';
 import { attachLobbyInput } from './lobbyInput';
 import { createBombHud } from './bombHud';
 import { createMatchHud } from './matchHud';
+import { createBalloonHud } from './balloonHud';
+import { createStatsSheet } from './statsSheet';
 import { connectLounge } from './net/loungeSocket';
 import { unlockAudio } from './sound';
 import { clearToken } from './storage';
@@ -69,10 +71,13 @@ async function boot() {
     onTransferHost: (id) => socket?.transferHost(id),
     onMoveMode: () => {},
     onStartMatch: (winners, practice) => socket?.startMatch(winners, practice),
+    onOpenStats: () => statsSheet.open(),
   });
   const nameOf = (id: string) => names.get(id) ?? '누군가';
   const bombHud = createBombHud(app, me.playerId, nameOf, () => socket?.passBomb());
-  const matchHud = createMatchHud(app, view, team.name, me.playerId, nameOf, hud.toast);
+  const statsSheet = createStatsSheet(app, team.slug, team.name, me.playerId);
+  const balloonHud = createBalloonHud(app, me.playerId, nameOf, (n) => socket?.pump(n));
+  const matchHud = createMatchHud(app, view, team.name, me.playerId, nameOf, hud.toast, () => statsSheet.open());
 
   socket = connectLounge(team.slug, me.token, {
     onPresence: (p) => {
@@ -104,16 +109,37 @@ async function boot() {
     onMatch: (m) => {
       matchHud.handle(m, (running) => hud.setGameRunning(running));
       if (m.type === 'roundEnd') {
-        bombHud.roundEnd(2800);
-        window.setTimeout(() => view?.bombRoundEnd(), 300);
+        if (m.gameType === 'BALLOON') {
+          balloonHud.roundEnd(2800);
+          window.setTimeout(() => view?.balloonRoundEnd(), 300);
+        } else {
+          bombHud.roundEnd(2800);
+          window.setTimeout(() => view?.bombRoundEnd(), 300);
+        }
       }
       if (m.type === 'finish') {
         bombHud.finish();
+        balloonHud.finish();
         view?.bombFinish();
+      }
+    },
+    onBalloon: (b) => {
+      if (b.type === 'start' && b.order && b.turn) {
+        view?.balloonStart(b.count ?? 0, b.centerX ?? 0, b.centerZ ?? 0);
+        balloonHud.start(b.order, b.turn, b.count ?? 0, b.limitMin ?? 12, b.limitMax ?? 30, true);
+      } else if (b.type === 'turn' && b.player) {
+        balloonHud.turn(b.player);
+      } else if (b.type === 'pump' && b.player) {
+        view?.balloonPump(b.player, b.count ?? 0);
+        balloonHud.pump(b.player, b.pumps ?? 1, b.count ?? 0, b.auto ?? false);
+      } else if (b.type === 'pop' && b.loser) {
+        view?.balloonPop(b.loser);
+        balloonHud.pop(b.loser, b.count ?? 0, b.limit ?? 0);
       }
     },
     onNotice: (n) => {
       if (n.type === 'too-early') bombHud.tooEarly();
+      else if (n.type === 'not-your-turn') balloonHud.notYourTurn();
       else hud.toast(n.message);
     },
     onState: (state) => {
@@ -129,7 +155,7 @@ async function boot() {
   // 앱을 벗어나면 자리비움 (2단계 M3 결정)
   document.addEventListener('visibilitychange', () => socket?.away(document.hidden));
 
-  if (view) attachLobbyInput(view, socket, () => hud.moveMode, () => hud.hideHint());
+  if (view) attachLobbyInput(view, socket, () => hud.moveMode, () => hud.hideHint(), () => statsSheet.open());
 }
 
 void boot();

@@ -50,8 +50,8 @@ class GameRecordsTest {
         Instant at = Instant.parse("2026-11-06T23:50:00Z");
 
         long session = records.startSession(slug, "BOMB", 2, false, 2, 1, at);
-        records.saveRound(session, 1, park, 1200, at.plusSeconds(30), List.of(kim, park, lee));
-        records.saveRound(session, 2, lee, 3400, at.plusSeconds(60), List.of(kim, lee));
+        records.saveRound(session, 1, park, 1200, null, null, at.plusSeconds(30), List.of(kim, park, lee));
+        records.saveRound(session, 2, lee, 0, 19, 18, at.plusSeconds(60), List.of(kim, lee));
         records.endSession(session, at.plusSeconds(70));
 
         assertThat(jdbc.queryForObject("select play_date from game_session where id = ?", LocalDate.class, session))
@@ -59,6 +59,7 @@ class GameRecordsTest {
         assertThat(jdbc.queryForList("select loser_id from game_round where session_id = ? order by seq", UUID.class, session))
                 .containsExactly(park, lee);
         assertThat(jdbc.queryForObject("select count(*) from game_round_player", Integer.class)).isEqualTo(5);
+        assertThat(jdbc.queryForObject("select pump_limit from game_round where seq = 2", Integer.class)).isEqualTo(18);
         assertThat(jdbc.queryForObject("select ended_at is not null from game_session where id = ?", Boolean.class, session)).isTrue();
     }
 }

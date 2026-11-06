@@ -19,7 +19,7 @@ import java.util.function.Predicate;
  * </ul>
  * LobbyRoom 안에서만 쓰며 동기화는 LobbyRoom 이 맡는다.
  */
-final class BombGame {
+final class BombGame implements PartyGame {
 
     static final Duration MIN_HOLD = Duration.ofSeconds(1);
     static final Duration MAX_HOLD = Duration.ofSeconds(5);
@@ -31,7 +31,7 @@ final class BombGame {
     enum PassResult { PASSED, TOO_EARLY, NOT_HOLDER, OVER }
 
     /** 게임 중 생긴 일. LobbyService 가 그대로 방송한다. */
-    sealed interface Event permits Started, HolderChanged, Exploded, Finished {
+    sealed interface Event extends PartyGame.GameEvent permits Started, HolderChanged, Exploded, Finished {
     }
 
     record Started(List<UUID> order, UUID holder, double centerX, double centerZ) implements Event {
@@ -51,6 +51,7 @@ final class BombGame {
     private int holderIdx;
     private Instant receivedAt;
     private UUID loser;
+    private long lastHeldMs;
     private Instant endedAt;
 
     private BombGame(List<UUID> order, int firstHolder, Instant now, Duration fuse) {
@@ -72,7 +73,7 @@ final class BombGame {
         return new BombGame(order, firstHolder, now, fuse);
     }
 
-    List<UUID> order() {
+    public List<UUID> order() {
         return order;
     }
 
@@ -86,6 +87,24 @@ final class BombGame {
 
     boolean participates(UUID id) {
         return order.contains(id);
+    }
+
+    @Override
+    public String type() {
+        return "BOMB";
+    }
+
+    @Override
+    public GameEvent startedEvent(double centerX, double centerZ) {
+        return new Started(order, holder(), centerX, centerZ);
+    }
+
+    @Override
+    public Outcome outcome() {
+        if (!exploded()) {
+            return null;
+        }
+        return new Outcome(loser, lastHeldMs, null, null, explodeAt);
     }
 
     Instant explodeAt() {
@@ -110,7 +129,7 @@ final class BombGame {
      * 시간을 now 까지 진행한다. 0.1초 틱이 조금 늦게 와도, 자동 넘김과 폭발을
      * 실제로 일어났어야 할 시각 순서대로 처리하므로 결과가 틱 간격에 좌우되지 않는다.
      */
-    List<Event> advanceTo(Instant now, Predicate<UUID> online) {
+    public List<Event> advanceTo(Instant now, Predicate<UUID> online) {
         List<Event> events = new ArrayList<>();
         if (exploded()) {
             if (Duration.between(endedAt, now).compareTo(RESULT_TIME) >= 0) {
@@ -134,7 +153,8 @@ final class BombGame {
             if (!explodeAt.isAfter(now)) {
                 loser = holder();
                 endedAt = explodeAt;
-                events.add(new Exploded(loser, Duration.between(receivedAt, explodeAt).toMillis()));
+                lastHeldMs = Duration.between(receivedAt, explodeAt).toMillis();
+                events.add(new Exploded(loser, lastHeldMs));
             }
             break;
         }

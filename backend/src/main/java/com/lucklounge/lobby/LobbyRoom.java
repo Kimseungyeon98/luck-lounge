@@ -270,16 +270,25 @@ public class LobbyRoom {
     }
 
     public synchronized BombGame.PassResult passBomb(UUID playerId, Instant now) {
-        BombGame bomb = match == null ? null : match.bomb();
-        if (bomb == null) {
+        if (match == null || !(match.game() instanceof BombGame bomb)) {
             return BombGame.PassResult.OVER;
         }
         return bomb.pass(playerId, now);
     }
 
     public synchronized Optional<UUID> bombHolder() {
-        BombGame bomb = match == null ? null : match.bomb();
-        return bomb == null || bomb.exploded() ? Optional.empty() : Optional.of(bomb.holder());
+        if (match == null || !(match.game() instanceof BombGame bomb) || bomb.exploded()) {
+            return Optional.empty();
+        }
+        return Optional.of(bomb.holder());
+    }
+
+    /** 풍선 펌프질. 결과 소식은 다음 틱(0.1초 안)에 방송된다. */
+    public synchronized BalloonGame.PumpResult pumpBalloon(UUID playerId, int pumps, Instant now) {
+        if (match == null || !(match.game() instanceof BalloonGame balloon)) {
+            return BalloonGame.PumpResult.OVER;
+        }
+        return balloon.pump(playerId, pumps, now);
     }
 
     /** 진행 중인 판 (늦게 들어온 사람, 재접속한 사람에게 다시 알려 줄 때) */
