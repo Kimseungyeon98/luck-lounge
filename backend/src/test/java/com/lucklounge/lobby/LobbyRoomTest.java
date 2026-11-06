@@ -3,6 +3,7 @@ package com.lucklounge.lobby;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.time.Instant;
+import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 
@@ -119,5 +120,53 @@ class LobbyRoomTest {
         room.moveTo(kim, 1, 4.4);
         room.tick(0.1, t0);
         assertThat(room.presence().players().getFirst().away()).isFalse();
+    }
+
+    @Test
+    void 시한폭탄은_방장만_2명_이상일_때_시작한다() {
+        room.join("s1", kim, "김대리", 0);
+        assertThat(room.startBomb(kim, t0)).isEqualTo(LobbyRoom.StartFailure.NOT_ENOUGH_PLAYERS);
+        room.join("s2", park, "박과장", 1);
+        assertThat(room.startBomb(park, t0)).isEqualTo(LobbyRoom.StartFailure.NOT_HOST);
+        assertThat(room.startBomb(kim, t0)).isInstanceOf(BombGame.Started.class);
+        assertThat(room.startBomb(kim, t0)).isEqualTo(LobbyRoom.StartFailure.ALREADY_RUNNING);
+    }
+
+    @Test
+    void 시한폭탄_참가자는_둥글게_서고_게임_중에는_걸을_수_없다() {
+        room.join("s1", kim, "김대리", 0);
+        room.join("s2", park, "박과장", 1);
+        room.join("s3", lee, "이팀장", 2);
+        room.setAway(lee, true);
+        BombGame.Started started = (BombGame.Started) room.startBomb(kim, t0);
+        assertThat(started.order()).containsExactlyInAnyOrder(kim, park);
+
+        var before = room.positions();
+        before.stream().filter(p -> !p.id().equals(lee)).forEach(p -> {
+            assertThat(Obstacles.blocked(p.x(), p.z())).isFalse();
+            assertThat(Math.hypot(p.x() - LobbyRoom.BOMB_CENTER_X, p.z() - LobbyRoom.BOMB_CENTER_Z)).isCloseTo(1.6, org.assertj.core.data.Offset.offset(0.01));
+        });
+        room.moveTo(kim, 3, 4);
+        room.tick(0.5, t0.plusMillis(500));
+        var kimPos = room.positions().stream().filter(p -> p.id().equals(kim)).findFirst().orElseThrow();
+        var kimBefore = before.stream().filter(p -> p.id().equals(kim)).findFirst().orElseThrow();
+        assertThat(kimPos.x()).isEqualTo(kimBefore.x());
+    }
+
+    @Test
+    void 시한폭탄이_끝나면_다시_걸을_수_있다() {
+        room.join("s1", kim, "김대리", 0);
+        room.join("s2", park, "박과장", 1);
+        room.startBomb(kim, t0);
+        List<BombGame.Event> all = new java.util.ArrayList<>();
+        for (int s = 1; s <= 60; s++) {
+            all.addAll(room.tick(0.1, t0.plusSeconds(s)).bombEvents());
+        }
+        assertThat(all).filteredOn(e -> e instanceof BombGame.Exploded).hasSize(1);
+        assertThat(all).filteredOn(e -> e instanceof BombGame.Finished).hasSize(1);
+        assertThat(room.bombInProgress()).isEmpty();
+        room.moveTo(kim, 2, 4);
+        room.tick(0.1, t0.plusSeconds(61));
+        assertThat(room.positions().stream().anyMatch(LobbyRoom.PositionView::m)).isTrue();
     }
 }

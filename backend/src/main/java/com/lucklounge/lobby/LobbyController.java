@@ -62,6 +62,16 @@ class LobbyController {
         lobby.transferHost(me(principal), cmd.playerId());
     }
 
+    @MessageMapping("/t/{team}/bomb/start")
+    void startBomb(Principal principal) {
+        lobby.startBomb(me(principal));
+    }
+
+    @MessageMapping("/t/{team}/bomb/pass")
+    void passBomb(Principal principal) {
+        lobby.passBomb(me(principal));
+    }
+
     private static LoungePrincipal me(Principal principal) {
         return (LoungePrincipal) principal;
     }

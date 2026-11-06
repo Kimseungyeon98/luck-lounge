@@ -39,6 +39,24 @@ public class LobbyService implements SmartLifecycle {
     public record LobbyEvent(String type, UUID playerId, String text) {
     }
 
+    /** /topic/t/{팀}/bomb 으로 나가는 시한폭탄 소식. type: start | holder | explode | finish */
+    public record BombMessage(String type, java.util.List<UUID> order, UUID holder, Double centerX, Double centerZ,
+                              Boolean auto, UUID loser, Long heldMs) {
+
+        static BombMessage of(BombGame.Event e) {
+            return switch (e) {
+                case BombGame.Started s -> new BombMessage("start", s.order(), s.holder(), s.centerX(), s.centerZ(), null, null, null);
+                case BombGame.HolderChanged h -> new BombMessage("holder", null, h.holder(), null, null, h.auto(), null, null);
+                case BombGame.Exploded x -> new BombMessage("explode", null, null, null, null, null, x.loser(), x.heldMs());
+                case BombGame.Finished f -> new BombMessage("finish", null, null, null, null, null, null, null);
+            };
+        }
+    }
+
+    /** 나에게만 보내는 안내 */
+    public record PersonalNotice(String type, String message) {
+    }
+
     private final Map<String, LobbyRoom> rooms = new ConcurrentHashMap<>();
     private final SimpMessagingTemplate messaging;
     private final ChatFilter chatFilter;
@@ -85,6 +103,31 @@ public class LobbyService implements SmartLifecycle {
     public void sync(String team) {
         broadcastPresence(team);
         broadcastPositions(room(team));
+        room(team).bombInProgress().ifPresent(s -> bombEvent(team, s));
+    }
+
+    public void startBomb(LoungePrincipal p) {
+        Object result = room(p.teamSlug()).startBomb(p.playerId(), clock.instant());
+        if (result instanceof BombGame.Started started) {
+            broadcastPositions(room(p.teamSlug()));
+            bombEvent(p.teamSlug(), started);
+        } else {
+            String message = switch ((LobbyRoom.StartFailure) result) {
+                case NOT_HOST -> "방장만 시작할 수 있어요.";
+                case ALREADY_RUNNING -> "이미 게임이 진행 중이에요.";
+                case NOT_ENOUGH_PLAYERS -> "2명 이상 모여야 시작할 수 있어요.";
+            };
+            notice(p, "error", message);
+        }
+    }
+
+    public void passBomb(LoungePrincipal p) {
+        switch (room(p.teamSlug()).passBomb(p.playerId(), clock.instant())) {
+            case PASSED -> room(p.teamSlug()).bombHolder()
+                    .ifPresent(h -> bombEvent(p.teamSlug(), new BombGame.HolderChanged(h, false)));
+            case TOO_EARLY -> notice(p, "too-early", "받고 1초가 지나야 넘길 수 있어요.");
+            default -> { }
+        }
     }
 
     public void move(LoungePrincipal p, Double tx, Double tz, Double dx, Double dz) {
@@ -138,6 +181,9 @@ public class LobbyService implements SmartLifecycle {
                 if (r.positionsChanged()) {
                     broadcastPositions(room);
                 }
+                for (BombGame.Event e : r.bombEvents()) {
+                    bombEvent(room.teamSlug(), e);
+                }
                 if (r.presenceChanged()) {
                     broadcastPresence(room.teamSlug());
                     room.host().ifPresent(h -> event(room.teamSlug(), new LobbyEvent("host", h, "auto")));
@@ -154,6 +200,14 @@ public class LobbyService implements SmartLifecycle {
 
     private void broadcastPresence(String team) {
         messaging.convertAndSend("/topic/t/" + team + "/presence", room(team).presence());
+    }
+
+    private void bombEvent(String team, BombGame.Event e) {
+        messaging.convertAndSend("/topic/t/" + team + "/bomb", BombMessage.of(e));
+    }
+
+    private void notice(LoungePrincipal p, String type, String message) {
+        messaging.convertAndSendToUser(p.getName(), "/queue/me", new PersonalNotice(type, message));
     }
 
     private void event(String team, LobbyEvent e) {

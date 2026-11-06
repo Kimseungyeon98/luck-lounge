@@ -6,11 +6,24 @@ export interface Member { playerId: string; nickname: string; characterIndex: nu
 export interface Presence { players: Member[]; hostId: string | null }
 export interface Position { id: string; x: number; z: number; f: number; m: boolean }
 export interface LobbyEvent { type: 'chat' | 'emote' | 'host'; playerId: string; text: string }
+export interface BombMessage {
+  type: 'start' | 'holder' | 'explode' | 'finish';
+  order: string[] | null;
+  holder: string | null;
+  centerX: number | null;
+  centerZ: number | null;
+  auto: boolean | null;
+  loser: string | null;
+  heldMs: number | null;
+}
+export interface Notice { type: string; message: string }
 
 export interface LoungeSocketHandlers {
   onPresence(p: Presence): void;
   onPositions(list: Position[]): void;
   onEvent(e: LobbyEvent): void;
+  onBomb(m: BombMessage): void;
+  onNotice(n: Notice): void;
   onState(state: ConnectionState): void;
 }
 
@@ -21,6 +34,8 @@ export interface LoungeSocket {
   emote(emoji: string): void;
   away(away: boolean): void;
   transferHost(playerId: string): void;
+  startBomb(): void;
+  passBomb(): void;
   close(): void;
 }
 
@@ -48,6 +63,8 @@ export function connectLounge(slug: string, token: string, h: LoungeSocketHandle
     client.subscribe(`/topic/t/${slug}/presence`, json<Presence>(h.onPresence));
     client.subscribe(`/topic/t/${slug}/lobby`, json<{ players: Position[] }>((b) => h.onPositions(b.players)));
     client.subscribe(`/topic/t/${slug}/events`, json<LobbyEvent>(h.onEvent));
+    client.subscribe(`/topic/t/${slug}/bomb`, json<BombMessage>(h.onBomb));
+    client.subscribe('/user/queue/me', json<Notice>(h.onNotice));
     client.publish({ destination: `/app/t/${slug}/presence/sync`, body: '' });
   };
 
@@ -76,6 +93,8 @@ export function connectLounge(slug: string, token: string, h: LoungeSocketHandle
     emote: (emoji) => send('emote', { emoji }),
     away: (away) => send('away', { away }),
     transferHost: (playerId) => send('host/transfer', { playerId }),
+    startBomb: () => send('bomb/start', {}),
+    passBomb: () => send('bomb/pass', {}),
     close: () => void client.deactivate(),
   };
 }
