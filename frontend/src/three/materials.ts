@@ -12,6 +12,18 @@ export function mat(color: number): THREE.MeshStandardMaterial {
   return m;
 }
 
+const doubleCache = new Map<number, THREE.MeshStandardMaterial>();
+
+/** 안쪽 면도 보이는 재질 (앞머리·뒷머리처럼 얇은 판) */
+export function matDouble(color: number): THREE.MeshStandardMaterial {
+  let m = doubleCache.get(color);
+  if (!m) {
+    m = new THREE.MeshStandardMaterial({ color, roughness: 0.75, metalness: 0, side: THREE.DoubleSide });
+    doubleCache.set(color, m);
+  }
+  return m;
+}
+
 export function mesh(geo: THREE.BufferGeometry, color: number, x = 0, y = 0, z = 0, shadow = true): THREE.Mesh {
   const m = new THREE.Mesh(geo, mat(color));
   m.position.set(x, y, z);

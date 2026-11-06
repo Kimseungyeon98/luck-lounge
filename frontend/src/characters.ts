@@ -4,8 +4,8 @@
 export const CHARACTER_COUNT = 10;
 
 export const CHARACTER_NAMES = [
-  '짧은 머리', '단발', '긴 머리', '묶은 머리', '모자',
-  '곱슬', '앞머리', '안경', '민머리', '헤어밴드',
+  '짧은 머리', '단발', '긴 생머리', '똥머리', '야구모자',
+  '곱슬', '앞머리', '안경', '비니', '양갈래',
 ] as const;
 
 const SKINS = ['#F2C9A0', '#E3B08A', '#C98E66', '#F5D3B3', '#B97C55'];

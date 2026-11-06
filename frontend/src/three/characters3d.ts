@@ -1,12 +1,13 @@
 import * as THREE from 'three';
-import { mat, mesh } from './materials';
+import { mat, matDouble } from './materials';
 
 /**
- * 사람 모양 로우폴리 캐릭터 10종 (코드로 만든 임시 모델).
+ * SD 캐주얼 캐릭터 10종 (약 2.2등신, 코드로 만든 로우폴리).
+ * 큰 머리에 큰 눈·반짝이·볼터치, 후드티와 운동화.
  *
  * 나중에 glTF 모델로 바꿀 때는 {@link setCharacterFactory} 로 공장 함수만 갈아 끼우면 된다.
  * 공장 함수는 번호(0~9)를 받아 {@link CharacterRig} 를 돌려주면 되고,
- * 걷기 동작은 rig 의 팔·다리 관절(없으면 생략)을 흔드는 방식이라 glTF 쪽은 AnimationMixer 로 대신해도 된다.
+ * 걷기 동작은 rig 의 팔·다리 관절을 흔드는 방식이라 glTF 쪽은 AnimationMixer 로 대신해도 된다.
  */
 export interface CharacterRig {
   root: THREE.Group;
@@ -15,110 +16,176 @@ export interface CharacterRig {
   legR?: THREE.Object3D;
   armL?: THREE.Object3D;
   armR?: THREE.Object3D;
+  /** 바닥에서 머리 꼭대기까지 높이 (이름표 위치 계산용) */
+  height: number;
 }
 
 export type CharacterFactory = (index: number) => CharacterRig;
 
-const SKINS = [0xf2c9a0, 0xe3b08a, 0xc98e66, 0xf5d3b3, 0xb97c55];
-const HAIRS = [0x2a2320, 0x4a3426, 0x1b1b1f, 0x7a4e2d, 0x8c8c8c];
-const SHIRTS = [0x4c7bf4, 0xe8833a, 0x3fa97c, 0xc455a8, 0xd9b53f, 0x5bb8d6, 0x8a6fe0, 0xe05a6a, 0x6e8b3d, 0xa0785a];
-const PANTS = 0x3b4250;
+const SKINS = [0xf6d2b4, 0xedc09a, 0xd9a27a, 0xf8dcc4, 0xc98e66];
+const HAIRS = [0x2a2320, 0x5a3a26, 0x1b1b1f, 0x8a5a32, 0xb9b2a8, 0x3a2a55, 0x6b3a2a, 0x232323, 0xd9a55b, 0x4a3426];
+const TOPS = [0x4c7bf4, 0xf08a4b, 0x3fa97c, 0xd565b0, 0xf2c94c, 0x5bb8d6, 0x8a6fe0, 0xe85d6e, 0x7fa04a, 0xb08a6a];
+const PANTS = 0x4a5878;
+const SHOES = 0xffffff;
 
-const capGeo = new THREE.SphereGeometry(0.3, 18, 12, 0, Math.PI * 2, 0, Math.PI * 0.55);
-const eyeMat = new THREE.MeshBasicMaterial({ color: 0x1e1e22 });
-const mouthMat = new THREE.MeshBasicMaterial({ color: 0x7a4a3a });
+const eyeMat = new THREE.MeshBasicMaterial({ color: 0x221c20 });
+const whiteMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
+const blushMat = new THREE.MeshBasicMaterial({ color: 0xff8a8a, transparent: true, opacity: 0.45 });
+const mouthMat = new THREE.MeshBasicMaterial({ color: 0x8a4a3a });
+const glassesMat = new THREE.MeshBasicMaterial({ color: 0x2a2a2a });
 
-function limb(radius: number, length: number, color: number): THREE.Group {
-  const pivot = new THREE.Group();
-  pivot.add(mesh(new THREE.CapsuleGeometry(radius, length, 4, 10), color, 0, -length / 2 - radius * 0.3, 0));
-  return pivot;
+function part(geo: THREE.BufferGeometry, material: THREE.Material | number, x = 0, y = 0, z = 0): THREE.Mesh {
+  const m = new THREE.Mesh(geo, typeof material === 'number' ? mat(material) : material);
+  m.position.set(x, y, z);
+  m.castShadow = true;
+  return m;
+}
+const sphere = (r: number, w = 20, h = 16) => new THREE.SphereGeometry(r, w, h);
+const cylinder = (rt: number, rb: number, h: number, s = 16) => new THREE.CylinderGeometry(rt, rb, h, s);
+
+function buildHead(i: number, skin: number, hair: number): THREE.Group {
+  const head = new THREE.Group();
+  const face = part(sphere(0.42, 28, 22), skin);
+  face.scale.set(1, 0.94, 0.96);
+  head.add(face);
+  for (const x of [-0.41, 0.41]) head.add(part(sphere(0.08, 10, 8), skin, x, -0.02, 0));
+
+  // 큰 눈 + 반짝이
+  for (const x of [-0.15, 0.15]) {
+    const eye = part(sphere(0.072, 16, 12), eyeMat, x, -0.02, 0.37);
+    eye.scale.set(1, 1.35, 0.5);
+    head.add(eye);
+    head.add(part(sphere(0.024, 8, 6), whiteMat, x + 0.025, 0.03, 0.405));
+    head.add(part(sphere(0.012, 6, 4), whiteMat, x - 0.02, -0.05, 0.405));
+  }
+  // 볼터치, 입
+  for (const x of [-0.25, 0.25]) {
+    const blush = part(sphere(0.06, 12, 8), blushMat, x, -0.13, 0.33);
+    blush.scale.set(1.3, 0.7, 0.3);
+    blush.castShadow = false;
+    head.add(blush);
+  }
+  const mouth = part(new THREE.TorusGeometry(0.035, 0.01, 6, 12, Math.PI), mouthMat, 0, -0.15, 0.395);
+  mouth.rotation.z = Math.PI;
+  head.add(mouth);
+
+  // 머리 모양
+  const cap = (color: number, s = 1.04, y = 0.02) => {
+    const c = part(new THREE.SphereGeometry(0.45, 28, 18, 0, Math.PI * 2, 0, Math.PI * 0.5), color, 0, y, 0);
+    c.scale.set(s, 1, s);
+    head.add(c);
+  };
+  const bangs = (color: number, y = 0.2) =>
+    head.add(part(new THREE.CylinderGeometry(0.44, 0.44, 0.16, 28, 1, true, -Math.PI * 0.45, Math.PI * 0.9), matDouble(color), 0, y, 0));
+  const back = (color: number, h: number, y: number) =>
+    head.add(part(new THREE.CylinderGeometry(0.45, 0.4, h, 28, 1, true, Math.PI * 0.6, Math.PI * 0.8), matDouble(color), 0, y, 0));
+
+  switch (i) {
+    case 0: cap(hair, 1.03); bangs(hair); break; // 짧은 머리
+    case 1: cap(hair, 1.05); bangs(hair); back(hair, 0.45, -0.1); break; // 단발
+    case 2: cap(hair, 1.05); bangs(hair); back(hair, 0.9, -0.32); break; // 긴 생머리
+    case 3: cap(hair); bangs(hair); head.add(part(sphere(0.17, 16, 12), hair, 0, 0.5, -0.08)); break; // 똥머리
+    case 4: { // 야구모자
+      cap(0x2f6bff, 1.08, 0.05);
+      const brim = part(cylinder(0.3, 0.3, 0.03, 24), 0x2f6bff, 0, 0.2, 0.3);
+      brim.rotation.x = 0.25;
+      head.add(brim);
+      back(hair, 0.2, -0.02);
+      break;
+    }
+    case 5: // 곱슬
+      cap(hair);
+      for (let k = 0; k < 12; k++) {
+        const a = (k / 12) * Math.PI * 2;
+        head.add(part(sphere(0.13, 10, 8), hair, Math.cos(a) * 0.36, 0.22 + Math.sin(k * 1.7) * 0.05, Math.sin(a) * 0.34 - 0.04));
+      }
+      break;
+    case 6: { // 앞머리
+      cap(hair);
+      const fringe = part(new THREE.BoxGeometry(0.62, 0.14, 0.18), hair, 0, 0.2, 0.33);
+      fringe.rotation.x = 0.3;
+      head.add(fringe);
+      break;
+    }
+    case 7: { // 안경
+      cap(hair, 1.03);
+      bangs(hair, 0.22);
+      for (const x of [-0.15, 0.15]) head.add(part(new THREE.TorusGeometry(0.1, 0.016, 8, 20), glassesMat, x, -0.02, 0.4));
+      const bridge = part(cylinder(0.01, 0.01, 0.1, 6), glassesMat, 0, -0.02, 0.41);
+      bridge.rotation.z = Math.PI / 2;
+      head.add(bridge);
+      break;
+    }
+    case 8: // 비니
+      cap(0xe85d6e, 1.06, 0.06);
+      head.add(part(cylinder(0.46, 0.46, 0.1, 28), 0xc94b5b, 0, 0.1, 0));
+      head.add(part(sphere(0.08, 10, 8), 0xffffff, 0, 0.52, 0));
+      break;
+    default: // 양갈래
+      cap(hair);
+      bangs(hair);
+      for (const x of [-0.4, 0.4]) {
+        head.add(part(sphere(0.15, 14, 10), hair, x, 0.1, -0.08));
+        const tail = part(new THREE.ConeGeometry(0.1, 0.4, 10), hair, x * 1.08, -0.18, -0.08);
+        tail.rotation.z = Math.PI + (x > 0 ? -0.2 : 0.2);
+        head.add(tail);
+      }
+  }
+  return head;
 }
 
-function codeCharacter(index: number): CharacterRig {
+function sdCasual(index: number): CharacterRig {
   const i = ((index % 10) + 10) % 10;
   const skin = SKINS[i % 5];
-  const hair = HAIRS[(i * 3) % 5];
-  const shirt = SHIRTS[i];
+  const hair = HAIRS[i];
+  const top = TOPS[i];
 
   const root = new THREE.Group();
   const body = new THREE.Group();
   root.add(body);
 
-  const legL = limb(0.1, 0.36, PANTS);
-  legL.position.set(-0.12, 0.52, 0);
-  const legR = limb(0.1, 0.36, PANTS);
-  legR.position.set(0.12, 0.52, 0);
-  body.add(legL, legR);
-
-  body.add(mesh(new THREE.CapsuleGeometry(0.27, 0.32, 6, 14), shirt, 0, 0.86, 0));
-
-  const armL = limb(0.075, 0.36, shirt);
-  armL.position.set(-0.34, 1.04, 0);
-  armL.rotation.z = -0.12;
-  const armR = limb(0.075, 0.36, shirt);
-  armR.position.set(0.34, 1.04, 0);
-  armR.rotation.z = 0.12;
-  body.add(armL, armR);
-
-  const head = new THREE.Group();
-  head.position.set(0, 1.44, 0);
-  body.add(head);
-  head.add(mesh(new THREE.SphereGeometry(0.28, 20, 16), skin));
-  for (const x of [-0.095, 0.095]) {
-    const eye = new THREE.Mesh(new THREE.SphereGeometry(0.032, 8, 6), eyeMat);
-    eye.position.set(x, 0.02, 0.262);
-    head.add(eye);
-  }
-  const smile = new THREE.Mesh(new THREE.TorusGeometry(0.06, 0.012, 6, 12, Math.PI), mouthMat);
-  smile.position.set(0, -0.08, 0.262);
-  smile.rotation.z = Math.PI;
-  head.add(smile);
-
-  const cap = (color: number, y = 0.03, s = 1) => {
-    const c = new THREE.Mesh(capGeo, mat(color));
-    c.position.y = y;
-    c.scale.set(s, 1, s);
-    c.castShadow = true;
-    head.add(c);
+  const leg = (x: number) => {
+    const p = new THREE.Group();
+    p.position.set(x, 0.3, 0);
+    p.add(part(cylinder(0.085, 0.08, 0.2, 12), PANTS, 0, -0.1, 0));
+    const shoe = part(sphere(0.1, 14, 10), SHOES, 0, -0.24, 0.03);
+    shoe.scale.set(1, 0.6, 1.35);
+    p.add(shoe);
+    body.add(p);
+    return p;
   };
-  const backHair = (y: number, h: number) =>
-    head.add(mesh(new THREE.CylinderGeometry(0.31, 0.31, h, 18, 1, true, Math.PI * 0.75, Math.PI * 1.5), hair, 0, y, 0));
+  const legL = leg(-0.11);
+  const legR = leg(0.11);
 
-  switch (i) {
-    case 0: cap(hair, 0.05, 0.98); break; // 짧은 머리
-    case 1: cap(hair); backHair(-0.08, 0.3); break; // 단발
-    case 2: cap(hair); head.add(mesh(new THREE.BoxGeometry(0.56, 0.62, 0.18), hair, 0, -0.24, -0.16)); break; // 긴 머리
-    case 3: cap(hair); head.add(mesh(new THREE.SphereGeometry(0.13, 12, 10), hair, 0, 0.32, -0.12)); break; // 묶은 머리
-    case 4: cap(0x333a44, 0.06, 1.04); head.add(mesh(new THREE.BoxGeometry(0.34, 0.04, 0.24), 0x333a44, 0, 0.12, 0.3)); break; // 모자
-    case 5: // 곱슬
-      for (let k = 0; k < 9; k++) {
-        const a = (k / 9) * Math.PI * 2;
-        head.add(mesh(new THREE.SphereGeometry(0.11, 8, 6), hair, Math.cos(a) * 0.22, 0.2 + Math.sin(k) * 0.03, Math.sin(a) * 0.22 - 0.03));
-      }
-      head.add(mesh(new THREE.SphereGeometry(0.14, 8, 6), hair, 0, 0.3, 0));
-      break;
-    case 6: cap(hair); head.add(mesh(new THREE.BoxGeometry(0.46, 0.1, 0.12), hair, 0, 0.14, 0.22)); break; // 앞머리
-    case 7: // 안경
-      cap(hair, 0.05, 0.98);
-      for (const x of [-0.095, 0.095]) {
-        const ring = new THREE.Mesh(new THREE.TorusGeometry(0.065, 0.013, 6, 16), eyeMat);
-        ring.position.set(x, 0.02, 0.275);
-        head.add(ring);
-      }
-      break;
-    case 8: break; // 민머리
-    default: { // 헤어밴드
-      cap(hair);
-      backHair(-0.1, 0.26);
-      const band = mesh(new THREE.TorusGeometry(0.285, 0.03, 6, 24), 0xe05a6a, 0, 0.1, 0);
-      band.rotation.x = Math.PI / 2 - 0.25;
-      head.add(band);
-    }
-  }
-  return { root, body, legL, legR, armL, armR };
+  // 후드티
+  body.add(part(cylinder(0.19, 0.25, 0.34, 18), top, 0, 0.46, 0));
+  body.add(part(sphere(0.19, 16, 10), top, 0, 0.62, 0));
+  const hood = part(new THREE.TorusGeometry(0.16, 0.06, 8, 20), top, 0, 0.66, -0.08);
+  hood.rotation.x = Math.PI / 2 + 0.5;
+  body.add(hood);
+  body.add(part(new THREE.BoxGeometry(0.18, 0.07, 0.02), 0xffffff, 0, 0.4, 0.245));
+  for (const x of [-0.05, 0.05]) body.add(part(cylinder(0.008, 0.008, 0.12, 6), whiteMat, x, 0.58, 0.2));
+
+  const arm = (x: number) => {
+    const p = new THREE.Group();
+    p.position.set(x, 0.62, 0);
+    p.rotation.z = x < 0 ? -0.35 : 0.35;
+    p.add(part(cylinder(0.065, 0.06, 0.2, 10), top, 0, -0.1, 0));
+    p.add(part(sphere(0.07, 12, 10), skin, 0, -0.23, 0));
+    body.add(p);
+    return p;
+  };
+  const armL = arm(-0.21);
+  const armR = arm(0.21);
+
+  const head = buildHead(i, skin, hair);
+  head.position.y = 1.08;
+  body.add(head);
+
+  return { root, body, legL, legR, armL, armR, height: 1.55 };
 }
 
-let factory: CharacterFactory = codeCharacter;
+let factory: CharacterFactory = sdCasual;
 
 /** glTF 모델로 바꿀 때 호출. 예: setCharacterFactory(i => rigFromGltf(loadedModels[i])) */
 export function setCharacterFactory(f: CharacterFactory) {

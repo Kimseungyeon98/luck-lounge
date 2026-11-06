@@ -33,7 +33,7 @@ class Person {
         disposeSprite(this.label);
       }
       this.label = nameLabel(this.isMe ? `나 · ${nickname}` : nickname, this.isMe);
-      this.label.position.y = 2.05;
+      this.label.position.y = this.rig.height + 0.3;
       this.group.add(this.label);
       this.nickname = nickname;
     }
@@ -79,8 +79,8 @@ export class LoungeView {
   private readonly camDir = new THREE.Vector3(1, 1.15, 1.25).normalize();
   private readonly camTarget = new THREE.Vector3(1.4, -0.35, -2.2);
   private readonly camGoal = this.camTarget.clone();
-  private zoom = 2;
-  private zoomGoal = 2;
+  private zoom = 2.3;
+  private zoomGoal = 2.3;
   private readonly viewHeight = 9.5;
   private readonly lounge: Lounge;
   private readonly me = new Person(true);
@@ -192,7 +192,11 @@ export class LoungeView {
     const k = Math.SQRT1_2;
     const x = cx + (sx + sy) * k;
     const z = cz + (-sx + sy) * k;
-    return { x, z, face: Math.atan2(cx - x, cz - z) };
+    // SD 캐릭터는 얼굴이 보여야 하므로 카메라 쪽을 보되, 테이블 쪽으로 살짝 고개를 돌린다
+    const toCamera = Math.atan2(this.camDir.x, this.camDir.z);
+    const toTable = Math.atan2(cx - x, cz - z);
+    const diff = Math.atan2(Math.sin(toTable - toCamera), Math.cos(toTable - toCamera));
+    return { x, z, face: toCamera + diff * 0.25 };
   }
 
   private applyMode() {
@@ -200,7 +204,7 @@ export class LoungeView {
     for (const p of this.others.values()) p.group.visible = lobby;
     for (const s of this.lounge.signs) s.visible = lobby;
     this.me.showLabel(lobby);
-    this.zoomGoal = lobby ? 0.9 : 2;
+    this.zoomGoal = lobby ? 1.05 : 2.3;
   }
 
   private resize() {
