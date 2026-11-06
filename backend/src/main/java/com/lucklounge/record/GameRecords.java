@@ -48,16 +48,19 @@ public class GameRecords {
     }
 
     @Transactional
-    public void saveRound(long sessionId, int seq, UUID loserId, long heldMs, Instant endedAt, List<UUID> players) {
+    public void saveRound(long sessionId, int seq, UUID loserId, long heldMs, Integer pumpCount, Integer pumpLimit,
+                          Instant endedAt, List<UUID> players) {
         GeneratedKeyHolder keys = new GeneratedKeyHolder();
         jdbc.sql("""
-                        insert into game_round (session_id, seq, loser_id, held_ms, ended_at)
-                        values (:session, :seq, :loser, :held, :at)
+                        insert into game_round (session_id, seq, loser_id, held_ms, pump_count, pump_limit, ended_at)
+                        values (:session, :seq, :loser, :held, :pumpCount, :pumpLimit, :at)
                         """)
                 .param("session", sessionId)
                 .param("seq", seq)
                 .param("loser", loserId)
                 .param("held", heldMs)
+                .param("pumpCount", pumpCount, java.sql.Types.INTEGER)
+                .param("pumpLimit", pumpLimit, java.sql.Types.INTEGER)
                 .param("at", Timestamp.from(endedAt))
                 .update(keys, "id");
         long roundId = keys.getKeyAs(Long.class);

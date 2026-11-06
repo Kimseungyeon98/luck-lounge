@@ -71,6 +71,14 @@ class LobbyController {
                 Boolean.TRUE.equals(cmd.practice()));
     }
 
+    record PumpCommand(Integer pumps) {
+    }
+
+    @MessageMapping("/t/{team}/balloon/pump")
+    void pump(@Payload PumpCommand cmd, Principal principal) {
+        lobby.pumpBalloon(me(principal), cmd.pumps() == null ? 1 : cmd.pumps());
+    }
+
     @MessageMapping("/t/{team}/bomb/pass")
     void passBomb(Principal principal) {
         lobby.passBomb(me(principal));

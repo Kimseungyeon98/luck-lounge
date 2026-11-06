@@ -171,7 +171,7 @@ class LobbyRoomTest {
     }
 
     @Test
-    void 풍선이_이겨도_시한폭탄으로_진행한다() {
+    void 풍선이_이기면_풍선_불기로_진행한다() {
         room.join("s1", kim, "김대리", 0);
         room.join("s2", park, "박과장", 1);
         standAt(room, kim, 3.0, 3.6);
@@ -179,8 +179,9 @@ class LobbyRoomTest {
         List<Match.Event> events = run(room, 1, 20);
         Match.VoteEnded vote = (Match.VoteEnded) events.stream().filter(e -> e instanceof Match.VoteEnded).findFirst().orElseThrow();
         assertThat(vote.won()).isEqualTo(Match.Booth.BALLOON);
-        assertThat(vote.gameType()).isEqualTo("BOMB");
-        assertThat(events).anyMatch(e -> e instanceof Match.RoundStarted);
+        assertThat(vote.gameType()).isEqualTo("BALLOON");
+        assertThat(events).anyMatch(e -> e instanceof Match.RoundStarted r && r.gameType().equals("BALLOON")
+                && r.start() instanceof BalloonGame.Started);
     }
 
     @Test
@@ -188,15 +189,16 @@ class LobbyRoomTest {
         room.join("s1", kim, "김대리", 0);
         room.join("s2", park, "박과장", 1);
         room.join("s3", lee, "이팀장", 2);
+        standAt(room, kim, -2.0, 2.6);  // 시한폭탄 한 표 (투표 없으면 무작위라 풍선이 될 수 있음)
         room.startMatch(kim, 2, false, t0);
         List<Match.Event> events = run(room, 1, 200);
 
         List<Match.RoundEnded> rounds = events.stream().filter(e -> e instanceof Match.RoundEnded).map(e -> (Match.RoundEnded) e).toList();
         assertThat(rounds).hasSize(2);
-        assertThat(rounds.get(0).loser()).isNotEqualTo(rounds.get(1).loser());
+        assertThat(rounds.get(0).outcome().loser()).isNotEqualTo(rounds.get(1).outcome().loser());
         assertThat(rounds.get(0).more()).isTrue();
         assertThat(rounds.get(1).more()).isFalse();
-        assertThat(rounds.get(1).players()).doesNotContain(rounds.get(0).loser());
+        assertThat(rounds.get(1).players()).doesNotContain(rounds.get(0).outcome().loser());
 
         Match.Summary summary = (Match.Summary) events.stream().filter(e -> e instanceof Match.Summary).findFirst().orElseThrow();
         assertThat(summary.winners()).hasSize(2);
@@ -230,5 +232,23 @@ class LobbyRoomTest {
         room.tick(0.5, t0.plusSeconds(15));
         var after = room.positions().stream().filter(p -> p.id().equals(kim)).findFirst().orElseThrow();
         assertThat(after.x()).isEqualTo(before.x());
+    }
+
+    @Test
+    void 풍선_불기_연속_판도_끝까지_진행된다() {
+        room.join("s1", kim, "김대리", 0);
+        room.join("s2", park, "박과장", 1);
+        room.join("s3", lee, "이팀장", 2);
+        standAt(room, kim, 3.0, 3.6);
+        room.startMatch(kim, 2, false, t0);
+        // 아무도 펌프질하지 않아도 7초마다 1번 자동이므로 한계(최대 30)를 넘겨 끝난다
+        List<Match.Event> events = run(room, 1, 600);
+        List<Match.RoundEnded> rounds = events.stream().filter(e -> e instanceof Match.RoundEnded).map(e -> (Match.RoundEnded) e).toList();
+        assertThat(rounds).hasSize(2);
+        assertThat(rounds).allSatisfy(r -> {
+            assertThat(r.gameType()).isEqualTo("BALLOON");
+            assertThat(r.outcome().pumpCount()).isEqualTo(r.outcome().pumpLimit() + 1);
+        });
+        assertThat(events.getLast()).isInstanceOf(Match.Finished.class);
     }
 }

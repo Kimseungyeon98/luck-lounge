@@ -7,7 +7,7 @@ import type { LoungeView } from './three/LoungeView';
  * - 탭 이동: 누른 바닥 지점을 서버에 목적지로 보낸다
  * - 조이스틱: 누른 자리에 조이스틱이 생기고, 끄는 방향·세기를 0.1초마다(바뀔 때만) 보낸다
  */
-export function attachLobbyInput(view: LoungeView, socket: LoungeSocket, getMode: () => MoveMode, onFirstMove: () => void) {
+export function attachLobbyInput(view: LoungeView, socket: LoungeSocket, getMode: () => MoveMode, onFirstMove: () => void, onBoard: () => void) {
   const canvas = view.canvas;
   const stick = document.createElement('div');
   stick.className = 'stick';
@@ -30,6 +30,10 @@ export function attachLobbyInput(view: LoungeView, socket: LoungeSocket, getMode
   };
 
   canvas.addEventListener('pointerdown', (e) => {
+    if (view.hitsBoard(e.clientX, e.clientY)) {
+      onBoard();
+      return;
+    }
     if (getMode() === 'tap') {
       const p = view.floorAt(e.clientX, e.clientY);
       if (p) {

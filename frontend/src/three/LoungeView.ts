@@ -28,7 +28,10 @@ class Person {
 
   /** 폭탄을 들고 있으면 팔을 머리 위로, 이름표를 폭탄 위로 */
   holding = false;
+  /** 풍선 펌프질 동작이 남은 시간 */
+  pumpLeft = 0;
   private soot?: THREE.Group;
+  private rubber?: THREE.Group;
 
   /** 서버가 알려 준 위치·방향·걷는 중 */
   readonly server = { x: 0, z: 0, f: 0.67, m: false, known: false };
@@ -169,6 +172,30 @@ class Person {
     }
   }
 
+  /** 풍선 당첨 연출: 머리에 고무 조각, 놀란 입 */
+  setRubber(v: boolean) {
+    if (v && !this.rubber) {
+      const g = new THREE.Group();
+      const red = new THREE.MeshBasicMaterial({ color: 0xe84b5f, side: THREE.DoubleSide });
+      for (let k = 0; k < 6; k++) {
+        const piece = new THREE.Mesh(new THREE.PlaneGeometry(0.2, 0.12), red);
+        const a = (k / 6) * Math.PI * 2;
+        piece.position.set(Math.cos(a) * 0.3, 0.38 + (k % 2) * 0.06, Math.sin(a) * 0.28);
+        piece.rotation.set(Math.random(), a, Math.random());
+        g.add(piece);
+      }
+      const mouth = new THREE.Mesh(new THREE.SphereGeometry(0.05, 10, 8), new THREE.MeshBasicMaterial({ color: 0x5a2a2a }));
+      mouth.position.set(0, -0.13, 0.4);
+      g.add(mouth);
+      g.position.y = (this.rig.height ?? 1.55) - 0.47;
+      this.rig.body.add(g);
+      this.rubber = g;
+    } else if (!v && this.rubber) {
+      this.rig.body.remove(this.rubber);
+      this.rubber = undefined;
+    }
+  }
+
   get position() {
     return this.group.position;
   }
@@ -193,8 +220,10 @@ class Person {
     const swing = moving ? Math.sin(this.walkPhase) * 0.7 : 0;
     if (this.rig.legL) this.rig.legL.rotation.x = swing;
     if (this.rig.legR) this.rig.legR.rotation.x = -swing;
-    if (this.rig.armL) this.rig.armL.rotation.x = this.holding ? -2.7 : -swing * 0.8;
-    if (this.rig.armR) this.rig.armR.rotation.x = this.holding ? -2.7 : swing * 0.8;
+    if (this.pumpLeft > 0) this.pumpLeft -= dt;
+    const pumpArm = this.pumpLeft > 0 ? -1.2 - Math.sin(this.pumpLeft * 18) * 0.5 : null;
+    if (this.rig.armL) this.rig.armL.rotation.x = this.holding ? -2.7 : pumpArm ?? -swing * 0.8;
+    if (this.rig.armR) this.rig.armR.rotation.x = this.holding ? -2.7 : pumpArm ?? swing * 0.8;
     this.rig.body.position.y = moving ? Math.abs(Math.sin(this.walkPhase)) * 0.08 : Math.sin(t * 2.2 + this.idlePhase) * 0.012;
     if (this.zz) this.zz.position.y = (this.rig.height ?? 1.55) + 0.05 + Math.sin(t * 2) * 0.06;
     if (this.bubble) {
@@ -242,6 +271,11 @@ export class LoungeView {
   private markerLeft = 0;
   private bombState: BombState | null = null;
   private voting = false;
+  private balloonState: { center: THREE.Vector3; count: number } | null = null;
+  private readonly balloon: THREE.Group;
+  private readonly balloonStand: THREE.Group;
+  private readonly bits: { mesh: THREE.Mesh; v: THREE.Vector3; spin: THREE.Vector3; life: number }[] = [];
+  private balloonShown = 0.8;
   private readonly bomb: THREE.Group;
   private readonly spark: THREE.Mesh;
   private readonly puffs: { mesh: THREE.Mesh; v: THREE.Vector3; life: number }[] = [];
@@ -307,6 +341,35 @@ export class LoungeView {
       puff.visible = false;
       this.scene.add(puff);
       this.puffs.push({ mesh: puff, v: new THREE.Vector3(), life: 0 });
+    }
+
+    // 풍선과 받침, 터질 때 조각
+    this.balloonStand = new THREE.Group();
+    const standMat = new THREE.MeshStandardMaterial({ color: 0x8c7a66, roughness: 0.9 });
+    const base = new THREE.Mesh(new THREE.CylinderGeometry(0.35, 0.45, 0.5, 18), standMat);
+    base.position.y = 0.25;
+    base.castShadow = true;
+    const pumpBody = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.16, 0.35, 10), new THREE.MeshStandardMaterial({ color: 0x5a6472 }));
+    pumpBody.position.y = 0.67;
+    this.balloonStand.add(base, pumpBody);
+    this.balloonStand.visible = false;
+    this.scene.add(this.balloonStand);
+    this.balloon = new THREE.Group();
+    const skinMat = new THREE.MeshStandardMaterial({ color: 0xe84b5f, roughness: 0.35 });
+    const skin = new THREE.Mesh(new THREE.SphereGeometry(0.5, 28, 22), skinMat);
+    skin.castShadow = true;
+    const knot = new THREE.Mesh(new THREE.ConeGeometry(0.08, 0.14, 10), skinMat);
+    knot.position.y = -0.52;
+    const shine = new THREE.Mesh(new THREE.SphereGeometry(0.12, 10, 8), new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.55 }));
+    shine.position.set(-0.18, 0.22, 0.38);
+    this.balloon.add(skin, knot, shine);
+    this.balloon.visible = false;
+    this.scene.add(this.balloon);
+    for (let i = 0; i < 18; i++) {
+      const bit = new THREE.Mesh(new THREE.PlaneGeometry(0.16, 0.1), new THREE.MeshBasicMaterial({ color: 0xe84b5f, side: THREE.DoubleSide, transparent: true }));
+      bit.visible = false;
+      this.scene.add(bit);
+      this.bits.push({ mesh: bit, v: new THREE.Vector3(), spin: new THREE.Vector3(), life: 0 });
     }
 
     this.me.set('', 0);
@@ -426,7 +489,10 @@ export class LoungeView {
   /** 투표 중에는 두 부스가 다 보이게 카메라를 넓힌다 */
   setVoting(v: boolean) {
     this.voting = v;
-    for (const p of this.people.values()) p.setSoot(false);
+    for (const p of this.people.values()) {
+      p.setSoot(false);
+      p.setRubber(false);
+    }
   }
 
   /** 지금 부스 위에 서 있는 인원 (화면 표시용. 실제 집계는 서버가 한다) */
@@ -441,7 +507,65 @@ export class LoungeView {
     return c;
   }
 
+  // ---------- 풍선 불기 ----------
+
+  balloonStart(count: number, centerX: number, centerZ: number) {
+    this.voting = false;
+    this.balloonState = { center: new THREE.Vector3(centerX, 0, centerZ), count };
+    this.balloonShown = this.balloonSize(count);
+    this.balloonStand.position.set(centerX, 0, centerZ);
+    this.balloon.position.set(centerX, 1.4, centerZ);
+    this.balloonStand.visible = true;
+    this.balloon.visible = true;
+    for (const g of this.lounge.boothGroups) g.visible = false;
+  }
+
+  balloonPump(playerId: string, count: number) {
+    if (!this.balloonState) return;
+    this.balloonState.count = count;
+    const p = this.people.get(playerId);
+    if (p) p.pumpLeft = 0.5;
+  }
+
+  balloonPop(loser: string) {
+    if (!this.balloonState) return;
+    this.balloon.visible = false;
+    const at = this.balloon.position;
+    for (const b of this.bits) {
+      b.mesh.visible = true;
+      b.mesh.position.copy(at);
+      b.v.set((Math.random() - 0.5) * 5, Math.random() * 3, (Math.random() - 0.5) * 5);
+      b.spin.set(Math.random() * 8, Math.random() * 8, 0);
+      b.life = 1.2;
+      (b.mesh.material as THREE.MeshBasicMaterial).opacity = 1;
+    }
+    this.people.get(loser)?.setRubber(true);
+    if (!this.reduceMotion) this.shake = 0.3;
+  }
+
+  /** 판 사이: 다음 판에서 새 풍선이 나온다 */
+  balloonRoundEnd() {
+    this.balloon.visible = false;
+  }
+
+  private balloonSize(count: number) {
+    return 0.8 + count * 0.06;
+  }
+
+  /** 화면의 이 지점이 통계 게시판인지 */
+  hitsBoard(clientX: number, clientY: number): boolean {
+    if (this.mode !== 'lobby') return false;
+    const r = this.renderer.domElement.getBoundingClientRect();
+    const ndc = new THREE.Vector2(((clientX - r.left) / r.width) * 2 - 1, -((clientY - r.top) / r.height) * 2 + 1);
+    this.raycaster.setFromCamera(ndc, this.camera);
+    return this.raycaster.intersectObject(this.lounge.board).length > 0;
+  }
+
   bombFinish() {
+    this.balloonState = null;
+    this.balloon.visible = false;
+    this.balloonStand.visible = false;
+    for (const p of this.people.values()) p.setRubber(false);
     this.bombState = null;
     this.bomb.visible = false;
     for (const p of this.people.values()) {
@@ -506,13 +630,14 @@ export class LoungeView {
       this.camGoal.set(mp.x, -0.35, mp.z);
     } else if (this.voting) {
       this.camGoal.set(0, 0.3, 2.3);
-    } else if (this.bombState) {
+    } else if (this.bombState || this.balloonState) {
       // 게임 중에는 둥글게 선 사람들 전체가 보이게
-      this.camGoal.set(this.bombState.center.x, 0.2, this.bombState.center.z + 0.3);
+      const c = (this.bombState ?? this.balloonState)!.center;
+      this.camGoal.set(c.x, 0.2, c.z + 0.3);
     } else {
       this.camGoal.set(Math.max(-3.0, Math.min(2.6, mp.x - 0.5)), 0.3, Math.max(-3.2, Math.min(2.4, mp.z - 0.3)));
     }
-    this.zoomGoal = this.mode === 'preview' ? 2.3 : this.voting ? 0.64 : this.bombState ? 0.95 : 1.05;
+    this.zoomGoal = this.mode === 'preview' ? 2.3 : this.voting ? 0.64 : this.bombState || this.balloonState ? 0.95 : 1.05;
     if (this.bombState?.holder) {
       const h = this.people.get(this.bombState.holder);
       if (h) {
@@ -521,6 +646,24 @@ export class LoungeView {
         this.bomb.rotation.y += dt * 2;
         this.spark.scale.setScalar(0.8 + Math.sin(this.t * 25) * 0.35);
       }
+    }
+    if (this.balloonState) {
+      this.balloonShown += (this.balloonSize(this.balloonState.count) - this.balloonShown) * (1 - Math.exp(-dt * 10));
+      const pumping = [...this.people.values()].some((p) => p.pumpLeft > 0);
+      const wobble = 1 + Math.sin(this.t * 3) * 0.015 + (pumping ? Math.sin(this.t * 40) * 0.025 : 0);
+      const sz = this.balloonShown;
+      this.balloon.scale.set(sz * wobble, sz * 1.15 * wobble, sz * wobble);
+      this.balloon.position.y = 0.95 + sz * 0.58;
+    }
+    for (const b of this.bits) {
+      if (b.life <= 0) continue;
+      b.life -= dt;
+      b.v.y -= 6 * dt;
+      b.mesh.position.addScaledVector(b.v, dt);
+      b.mesh.rotation.x += b.spin.x * dt;
+      b.mesh.rotation.y += b.spin.y * dt;
+      (b.mesh.material as THREE.MeshBasicMaterial).opacity = Math.max(0, b.life);
+      if (b.life <= 0) b.mesh.visible = false;
     }
     for (const puff of this.puffs) {
       if (puff.life <= 0) continue;

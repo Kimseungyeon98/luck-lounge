@@ -59,6 +59,23 @@ export const sfx = {
     tone(660, 0.09, 'triangle', 0.12);
     setTimeout(() => tone(880, 0.09, 'triangle', 0.12), 90);
   },
+  pump: () => {
+    tone(220, 0.12, 'sawtooth', 0.04);
+    setTimeout(() => tone(330, 0.08, 'sine', 0.05), 60);
+  },
+  pop: () => {
+    if (!enabled || !ctx) return;
+    const len = ctx.sampleRate * 0.25;
+    const buf = ctx.createBuffer(1, len, ctx.sampleRate);
+    const d = buf.getChannelData(0);
+    for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, 6);
+    const src = ctx.createBufferSource();
+    const g = ctx.createGain();
+    g.gain.value = 0.8;
+    src.buffer = buf;
+    src.connect(g).connect(ctx.destination);
+    src.start();
+  },
   boom: () => {
     if (!enabled || !ctx) return;
     const len = ctx.sampleRate * 0.9;

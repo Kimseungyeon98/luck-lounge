@@ -15,8 +15,8 @@
 | M1 | 뼈대, 팀 링크, 닉네임 입장, 3D 메인 화면·대기실, 배포 구성 | 완료 |
 | M2 | 대기실 캐릭터 이동(탭·조이스틱), 위치 동기화, 말풍선 채팅, 방장, 자리비움 | 완료 |
 | M3 | 시한폭탄 돌리기 (서버 판정, 효과음·진동) | 완료 |
-| M4 | 걸어서 투표, 당첨자 수, 연속 판, 결과 저장·요약 | 진행 중 |
-| M5 | 풍선 불기, 통계 | |
+| M4 | 걸어서 투표, 당첨자 수, 연속 판, 결과 저장·요약 | 완료 |
+| M5 | 풍선 불기, 통계 게시판(이번 달·지난달·전체) | 진행 중 |
 | M6 | 캐릭터·라운지 3D 모델 교체 (glTF) | |
 
 ## 구조
@@ -33,7 +33,7 @@ Caddy ── Spring Boot 4 (Java 25) ── PostgreSQL
 
 | 경로 | 내용 |
 |---|---|
-| `backend/` | Spring Boot. `team`, `player`, `lobby`(위치·말풍선·방장·투표·시한폭탄), `record`(내기 기록) 패키지 |
+| `backend/` | Spring Boot. `team`, `player`, `lobby`(위치·말풍선·방장·투표·시한폭탄·풍선 불기), `record`(내기 기록·통계 `GET /api/teams/{t}/stats`) 패키지 |
 | `frontend/` | Three.js + Vite. 3D 라운지 위에 입장 카드(DOM)와 대기실 표시줄 |
 | `deploy/` | Dockerfile, docker-compose, Caddyfile, 팀 링크·백업 스크립트 |
 | `docs/oracle-setup.md` | 무료 서버 준비 안내 |

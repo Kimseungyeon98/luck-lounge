@@ -24,6 +24,8 @@ export interface Lounge {
   signs: THREE.Sprite[];
   /** 부스 전체 (시한폭탄 중에는 숨김) */
   boothGroups: THREE.Group[];
+  /** 통계 게시판 (누르면 통계 화면) */
+  board: THREE.Mesh;
   /** 걸어다닐 수 있는 범위 (M2) */
   bounds: { minX: number; maxX: number; minZ: number; maxZ: number };
 }
@@ -89,7 +91,7 @@ export function buildLounge(): Lounge {
   bg.fillText('이번 달 통계', 128, 70);
   bg.fillStyle = '#FF9B78';
   bg.font = '24px sans-serif';
-  bg.fillText('곧 열려요', 128, 116);
+  bg.fillText('눌러서 보기', 128, 116);
   const board = new THREE.Mesh(new THREE.PlaneGeometry(2, 1.25), new THREE.MeshStandardMaterial({ map: canvasTexture(bc), roughness: 0.9 }));
   board.position.set(-5.88, 1.8, -1.6);
   board.rotation.y = Math.PI / 2;
@@ -155,10 +157,10 @@ export function buildLounge(): Lounge {
   const balloon = mesh(new THREE.SphereGeometry(0.55, 20, 16), 0xe84b5f, -0.05, 1.75, 0);
   balloonProp.add(balloon);
   balloonProp.add(mesh(new THREE.ConeGeometry(0.09, 0.14, 8), 0xe84b5f, -0.05, 1.08, 0));
-  booth('풍선 · 준비 중', 3.0, 2.6, 0x2f6bff, balloonProp, (t) => {
+  booth('풍선', 3.0, 2.6, 0x2f6bff, balloonProp, (t) => {
     const s = 1 + Math.sin(t * 1.6) * 0.06;
     balloon.scale.set(s, s * 1.15, s);
   });
 
-  return { group, booths, signs, boothGroups, bounds: { minX: -5.4, maxX: 5.4, minZ: -3.6, maxZ: 5.2 } };
+  return { group, booths, signs, boothGroups, board, bounds: { minX: -5.4, maxX: 5.4, minZ: -3.6, maxZ: 5.2 } };
 }

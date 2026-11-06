@@ -119,8 +119,10 @@ public class LobbyService implements SmartLifecycle {
         broadcastPositions(room(team));
         room(team).voteInProgress(clock.instant()).ifPresent(v -> matchMessage(team, voteMessage(v)));
         room(team).roundInProgress().ifPresent(r -> {
-            matchMessage(team, msg("round", "round", r.round()));
-            bombEvent(team, r.start());
+            Map<String, Object> m = msg("round", "round", r.round());
+            m.put("gameType", r.gameType());
+            matchMessage(team, m);
+            gameEvent(team, r.start());
         });
     }
 
@@ -243,26 +245,33 @@ public class LobbyService implements SmartLifecycle {
             case Match.Cancelled c -> matchMessage(team, msg("cancel", "message", c.reason()));
             case Match.RoundStarted r -> {
                 broadcastPositions(room);
-                matchMessage(team, msg("round", "round", r.round()));
-                bombEvent(team, r.start());
+                Map<String, Object> m = msg("round", "round", r.round());
+                m.put("gameType", r.gameType());
+                matchMessage(team, m);
+                gameEvent(team, r.start());
             }
-            case Match.BombEvent b -> bombEvent(team, b.event());
+            case Match.GameEvent g -> gameEvent(team, g.event());
             case Match.RoundEnded r -> {
+                PartyGame.Outcome o = r.outcome();
                 Map<String, Object> m = msg("roundEnd", "round", r.round());
-                m.put("loser", r.loser());
-                m.put("heldMs", r.heldMs());
+                m.put("gameType", r.gameType());
+                m.put("loser", o.loser());
+                m.put("heldMs", o.heldMs());
+                m.put("pumpCount", o.pumpCount());
+                m.put("pumpLimit", o.pumpLimit());
                 m.put("remaining", r.remaining());
                 m.put("more", r.more());
                 matchMessage(team, m);
                 recordWriter.execute(() -> safely(() -> {
                     Long session = openSessions.get(team);
                     if (session != null) {
-                        records.saveRound(session, r.round(), r.loser(), r.heldMs(), r.at(), r.players());
+                        records.saveRound(session, r.round(), o.loser(), o.heldMs(), o.pumpCount(), o.pumpLimit(), o.at(), r.players());
                     }
                 }));
             }
             case Match.Summary s -> {
                 Map<String, Object> m = msg("summary", "participants", s.participants());
+                m.put("gameType", s.gameType());
                 m.put("practice", s.practice());
                 m.put("winners", s.winners());
                 matchMessage(team, m);
@@ -302,6 +311,52 @@ public class LobbyService implements SmartLifecycle {
             r.run();
         } catch (RuntimeException e) {
             log.warn("내기 기록 저장 실패", e);
+        }
+    }
+
+    /** 판 안의 소식: 시한폭탄은 /bomb, 풍선은 /balloon */
+    private void gameEvent(String team, PartyGame.GameEvent e) {
+        if (e instanceof BombGame.Event b) {
+            bombEvent(team, b);
+        } else if (e instanceof BalloonGame.Event b) {
+            messaging.convertAndSend("/topic/t/" + team + "/balloon", (Object) balloonMessage(b));
+        }
+    }
+
+    private static Map<String, Object> balloonMessage(BalloonGame.Event e) {
+        return switch (e) {
+            case BalloonGame.Started s -> {
+                Map<String, Object> m = msg("start", "order", s.order());
+                m.put("turn", s.turn());
+                m.put("count", s.count());
+                m.put("limitMin", s.limitMin());
+                m.put("limitMax", s.limitMax());
+                m.put("centerX", s.centerX());
+                m.put("centerZ", s.centerZ());
+                yield m;
+            }
+            case BalloonGame.Turn t -> msg("turn", "player", t.player());
+            case BalloonGame.Pumped p -> {
+                Map<String, Object> m = msg("pump", "player", p.player());
+                m.put("pumps", p.pumps());
+                m.put("count", p.count());
+                m.put("auto", p.auto());
+                yield m;
+            }
+            case BalloonGame.Popped p -> {
+                Map<String, Object> m = msg("pop", "loser", p.loser());
+                m.put("count", p.count());
+                m.put("limit", p.limit());
+                yield m;
+            }
+        };
+    }
+
+    public void pumpBalloon(LoungePrincipal p, int pumps) {
+        switch (room(p.teamSlug()).pumpBalloon(p.playerId(), pumps, clock.instant())) {
+            case NOT_YOUR_TURN -> notice(p, "not-your-turn", "아직 내 차례가 아니에요.");
+            case INVALID -> notice(p, "error", "1~3번 중에 골라 주세요.");
+            default -> { }
         }
     }
 

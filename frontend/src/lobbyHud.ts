@@ -35,6 +35,7 @@ export interface HudActions {
   onTransferHost(playerId: string): void;
   onMoveMode(mode: MoveMode): void;
   onStartMatch(winnersTarget: number, practice: boolean): void;
+  onOpenStats(): void;
 }
 
 /** 대기실 위에 올라가는 표시줄: 팀 이름·인원, 설정, 방장 메뉴, 말풍선 입력, 이모티콘 */
@@ -46,6 +47,8 @@ export function showLobbyHud(root: HTMLElement, team: Team, myId: string, action
   const status = h('span', { className: 'hud-status', role: 'status', hidden: true });
   const hostBtn = h('button', { type: 'button', className: 'icon-btn', ariaLabel: '방장 메뉴', hidden: true }, ['👑']);
   const settingsBtn = h('button', { type: 'button', className: 'icon-btn', ariaLabel: '설정' }, ['⚙️']);
+  const statsBtn = h('button', { type: 'button', className: 'icon-btn', ariaLabel: '통계' }, ['📊']);
+  statsBtn.addEventListener('click', () => actions.onOpenStats());
   const toast = h('div', { className: 'hud-toast', role: 'status', hidden: true });
 
   const hint = h('p', { className: 'hud-hint' });
@@ -89,7 +92,7 @@ export function showLobbyHud(root: HTMLElement, team: Team, myId: string, action
     winnersNote,
     h('label', { className: 'check', htmlFor: 'practice' }, [practice, '연습판 (통계에서 빼요)']),
     startMatch,
-    h('p', { className: 'sheet-note' }, ['부스 밖에 있으면 투표만 기권이고 게임에는 참가해요. 풍선 게임은 준비 중이라 풍선이 이기면 시한폭탄으로 해요.']),
+    h('p', { className: 'sheet-note' }, ['부스 밖에 있으면 투표만 기권이고 게임에는 참가해요.']),
     h('h2', {}, ['방장 넘기기']),
     h('p', { className: 'sheet-note' }, ['방장은 게임 고르기를 시작하고 당첨자 수를 정해요.']),
     memberList,
@@ -98,7 +101,7 @@ export function showLobbyHud(root: HTMLElement, team: Team, myId: string, action
 
   const teamBox = h('div', { className: 'hud-team' }, [h('b', {}, [team.name]), count]);
   const hud = h('div', { className: 'hud' }, [
-    h('div', { className: 'hud-top' }, [teamBox, h('div', { className: 'hud-buttons' }, [status, hostBtn, settingsBtn])]),
+    h('div', { className: 'hud-top' }, [teamBox, h('div', { className: 'hud-buttons' }, [status, hostBtn, statsBtn, settingsBtn])]),
     toast,
     h('div', { className: 'hud-bottom' }, [hint, actionRow, chatBar]),
     settings,

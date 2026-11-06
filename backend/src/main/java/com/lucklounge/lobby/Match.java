@@ -13,7 +13,6 @@ import java.util.function.Predicate;
  * 하루 내기 한 번: 걸어서 투표 → (결과 발표) → 연속 판 → 요약.
  * <ul>
  *   <li>투표: 10초. 끝날 때 부스 위 인원이 많은 게임, 동률이면 무작위</li>
- *   <li>풍선 게임은 아직 없으므로(M5) 풍선이 이기면 안내 후 시한폭탄으로 진행</li>
  *   <li>부스 밖 사람은 투표만 기권하고 게임에는 참가 (자리비움·접속 끊김은 제외)</li>
  *   <li>당첨자 수만큼 판을 돌리고, 판마다 당첨자를 빼고 남은 사람끼리 다시</li>
  * </ul>
@@ -23,7 +22,6 @@ final class Match {
 
     static final Duration VOTE_TIME = Duration.ofSeconds(10);
     static final Duration ANNOUNCE_TIME = Duration.ofSeconds(3);
-    static final Duration ANNOUNCE_TIME_BALLOON = Duration.ofSeconds(4);
     /** 폭발 후 다음 판까지 (결과 카드 + 3초 안내) */
     static final Duration BETWEEN_TIME = Duration.ofSeconds(4);
     static final Duration SUMMARY_TIME = Duration.ofSeconds(8);
@@ -36,7 +34,7 @@ final class Match {
     }
 
     /** 내기 진행 중에 생긴 일. LobbyService 가 방송하고 기록한다. */
-    sealed interface Event permits VoteStarted, VoteEnded, Cancelled, RoundStarted, BombEvent, RoundEnded, Summary, Finished {
+    sealed interface Event permits VoteStarted, VoteEnded, Cancelled, RoundStarted, GameEvent, RoundEnded, Summary, Finished {
     }
 
     record VoteStarted(long endsInMs, int winnersTarget, boolean practice) implements Event {
@@ -49,17 +47,17 @@ final class Match {
     record Cancelled(String reason) implements Event {
     }
 
-    record RoundStarted(int round, BombGame.Started start) implements Event {
+    record RoundStarted(int round, String gameType, PartyGame.GameEvent start) implements Event {
     }
 
-    /** 시한폭탄 한 판 안의 일 (보유자 변경, 폭발) */
-    record BombEvent(BombGame.Event event) implements Event {
+    /** 한 판 안의 일 (시한폭탄: 보유자 변경·폭발, 풍선: 차례·펌프질·터짐) */
+    record GameEvent(PartyGame.GameEvent event) implements Event {
     }
 
-    record RoundEnded(int round, UUID loser, long heldMs, List<UUID> players, int remaining, boolean more, Instant at) implements Event {
+    record RoundEnded(int round, String gameType, PartyGame.Outcome outcome, List<UUID> players, int remaining, boolean more) implements Event {
     }
 
-    record Summary(List<Winner> winners, int participants, boolean practice) implements Event {
+    record Summary(String gameType, List<Winner> winners, int participants, boolean practice) implements Event {
     }
 
     record Finished(Instant at) implements Event {
@@ -75,7 +73,8 @@ final class Match {
     private int winnersTarget;
     private final List<Winner> winners = new ArrayList<>();
     private int round;
-    private BombGame bomb;
+    private PartyGame game;
+    private String gameType = "BOMB";
 
     Match(int winnersTarget, boolean practice, Instant now, Random random) {
         this.requestedWinners = winnersTarget;
@@ -97,8 +96,9 @@ final class Match {
         return phase != Phase.VOTING && remaining.contains(playerId);
     }
 
-    BombGame bomb() {
-        return phase == Phase.PLAYING ? bomb : null;
+    /** 진행 중인 판 */
+    PartyGame game() {
+        return phase == Phase.PLAYING ? game : null;
     }
 
     /**
@@ -138,10 +138,11 @@ final class Match {
                 remaining = List.copyOf(eligible);
                 participantCount = remaining.size();
                 winnersTarget = Math.max(1, Math.min(requestedWinners, participantCount - 1));
+                gameType = won == Booth.BALLOON ? "BALLOON" : "BOMB";
                 events.add(new VoteEnded(bombVotes, balloonVotes, participantCount - bombVotes - balloonVotes, won,
-                        "BOMB", remaining, winnersTarget, practice, now));
+                        gameType, remaining, winnersTarget, practice, now));
                 phase = Phase.ANNOUNCE;
-                phaseEndsAt = now.plus(won == Booth.BALLOON ? ANNOUNCE_TIME_BALLOON : ANNOUNCE_TIME);
+                phaseEndsAt = now.plus(ANNOUNCE_TIME);
             }
             case ANNOUNCE, BETWEEN -> {
                 if (!now.isBefore(phaseEndsAt)) {
@@ -149,31 +150,30 @@ final class Match {
                 }
             }
             case PLAYING -> {
-                for (BombGame.Event e : bomb.advanceTo(now, online)) {
+                for (PartyGame.GameEvent e : game.advanceTo(now, online)) {
                     if (e instanceof BombGame.Finished) {
                         continue;
                     }
-                    events.add(new BombEvent(e));
-                    if (e instanceof BombGame.Exploded x) {
-                        Instant at = bomb.explodeAt();
-                        List<UUID> players = bomb.order();
-                        winners.add(new Winner(x.loser(), round, x.heldMs()));
-                        remaining = remaining.stream().filter(id -> !id.equals(x.loser())).toList();
-                        stepOut.accept(x.loser());
-                        boolean more = winners.size() < winnersTarget
-                                && remaining.stream().filter(online).count() >= 2;
-                        events.add(new RoundEnded(round, x.loser(), x.heldMs(), players, remaining.size(), more, at));
-                        if (more) {
-                            phase = Phase.BETWEEN;
-                            phaseEndsAt = at.plus(BETWEEN_TIME);
-                        } else {
-                            phase = Phase.SUMMARY;
-                            phaseEndsAt = at.plus(Duration.ofMillis(1500)).plus(SUMMARY_TIME);
-                            events.add(new Summary(List.copyOf(winners), participantCount, practice));
-                        }
-                        bomb = null;
-                        break;
+                    events.add(new GameEvent(e));
+                }
+                PartyGame.Outcome outcome = game.outcome();
+                if (outcome != null) {
+                    List<UUID> players = game.order();
+                    winners.add(new Winner(outcome.loser(), round, outcome.heldMs()));
+                    remaining = remaining.stream().filter(id -> !id.equals(outcome.loser())).toList();
+                    stepOut.accept(outcome.loser());
+                    boolean more = winners.size() < winnersTarget
+                            && remaining.stream().filter(online).count() >= 2;
+                    events.add(new RoundEnded(round, gameType, outcome, players, remaining.size(), more));
+                    if (more) {
+                        phase = Phase.BETWEEN;
+                        phaseEndsAt = outcome.at().plus(BETWEEN_TIME);
+                    } else {
+                        phase = Phase.SUMMARY;
+                        phaseEndsAt = outcome.at().plus(Duration.ofMillis(1500)).plus(SUMMARY_TIME);
+                        events.add(new Summary(gameType, List.copyOf(winners), participantCount, practice));
                     }
+                    game = null;
                 }
             }
             case SUMMARY -> {
@@ -191,23 +191,22 @@ final class Match {
         if (remaining.size() < 2) {
             phase = Phase.SUMMARY;
             phaseEndsAt = now.plus(SUMMARY_TIME);
-            events.add(new Summary(List.copyOf(winners), participantCount, practice));
+            events.add(new Summary(gameType, List.copyOf(winners), participantCount, practice));
             return;
         }
         round++;
-        bomb = BombGame.start(remaining, now, random);
-        place.accept(bomb.order());
+        game = "BALLOON".equals(gameType) ? BalloonGame.start(remaining, now, random) : BombGame.start(remaining, now, random);
+        place.accept(game.order());
         phase = Phase.PLAYING;
-        events.add(new RoundStarted(round, new BombGame.Started(bomb.order(), bomb.holder(),
-                LobbyRoom.BOMB_CENTER_X, LobbyRoom.BOMB_CENTER_Z)));
+        events.add(new RoundStarted(round, gameType, game.startedEvent(LobbyRoom.BOMB_CENTER_X, LobbyRoom.BOMB_CENTER_Z)));
     }
 
     /** 진행 중인 판 (재접속한 사람에게 다시 알려 줄 때) */
     RoundStarted currentRound() {
-        if (phase != Phase.PLAYING || bomb == null) {
+        if (phase != Phase.PLAYING || game == null) {
             return null;
         }
-        return new RoundStarted(round, new BombGame.Started(bomb.order(), bomb.holder(), LobbyRoom.BOMB_CENTER_X, LobbyRoom.BOMB_CENTER_Z));
+        return new RoundStarted(round, gameType, game.startedEvent(LobbyRoom.BOMB_CENTER_X, LobbyRoom.BOMB_CENTER_Z));
     }
 
     Instant phaseEndsAt() {
