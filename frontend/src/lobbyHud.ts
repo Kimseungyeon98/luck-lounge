@@ -34,7 +34,7 @@ export interface HudActions {
   onEmote(emoji: string): void;
   onTransferHost(playerId: string): void;
   onMoveMode(mode: MoveMode): void;
-  onStartBomb(): void;
+  onStartMatch(winnersTarget: number, practice: boolean): void;
 }
 
 /** 대기실 위에 올라가는 표시줄: 팀 이름·인원, 설정, 방장 메뉴, 말풍선 입력, 이모티콘 */
@@ -76,11 +76,20 @@ export function showLobbyHud(root: HTMLElement, team: Team, myId: string, action
 
   // 방장 넘기기
   const memberList = h('div', { className: 'member-list' });
-  const startBomb = h('button', { type: 'button', className: 'sheet-start' }, ['💣 시한폭탄 시작']);
+  let winnersTarget = 1;
+  const winnersOut = h('b', { className: 'stepper-value', ariaLive: 'polite' }, ['1']);
+  const minus = h('button', { type: 'button', ariaLabel: '당첨자 줄이기' }, ['−']);
+  const plus = h('button', { type: 'button', ariaLabel: '당첨자 늘리기' }, ['+']);
+  const winnersNote = h('p', { className: 'sheet-note' });
+  const practice = h('input', { type: 'checkbox', id: 'practice' });
+  const startMatch = h('button', { type: 'button', className: 'sheet-start' }, ['10초 동안 부스로 걸어가 투표']);
   const hostSheet = h('div', { className: 'sheet', hidden: true, role: 'dialog', ariaLabel: '방장 메뉴' }, [
-    h('h2', {}, ['방장 메뉴']),
-    startBomb,
-    h('p', { className: 'sheet-note' }, ['대기실에 있는 사람 모두가 참가해요. 자리비움인 사람은 빠져요.']),
+    h('h2', {}, ['게임 고르기']),
+    h('div', { className: 'sheet-row' }, [h('span', {}, ['오늘 당첨자 수']), h('span', { className: 'stepper' }, [minus, winnersOut, plus])]),
+    winnersNote,
+    h('label', { className: 'check', htmlFor: 'practice' }, [practice, '연습판 (통계에서 빼요)']),
+    startMatch,
+    h('p', { className: 'sheet-note' }, ['부스 밖에 있으면 투표만 기권이고 게임에는 참가해요. 풍선 게임은 준비 중이라 풍선이 이기면 시한폭탄으로 해요.']),
     h('h2', {}, ['방장 넘기기']),
     h('p', { className: 'sheet-note' }, ['방장은 게임 고르기를 시작하고 당첨자 수를 정해요.']),
     memberList,
@@ -115,9 +124,21 @@ export function showLobbyHud(root: HTMLElement, team: Team, myId: string, action
   soundOn.addEventListener('click', () => setSound(true));
   soundOff.addEventListener('click', () => setSound(false));
   setSound(soundEnabled());
-  startBomb.addEventListener('click', () => {
+  const eligibleCount = () => Math.max(1, members.filter((m) => !m.away).length);
+  const renderWinners = () => {
+    const n = eligibleCount();
+    winnersTarget = Math.max(1, Math.min(winnersTarget, Math.max(1, n - 1)));
+    winnersOut.textContent = String(winnersTarget);
+    winnersNote.textContent = n >= 2
+      ? `${n}명 중 ${winnersTarget}명 · 1명당 약 ${Math.round(n / winnersTarget)}잔. 당첨자를 빼고 남은 사람끼리 연속으로 해요.`
+      : '2명 이상 모여야 시작할 수 있어요.';
+    startMatch.disabled = n < 2;
+  };
+  minus.addEventListener('click', () => { winnersTarget--; renderWinners(); });
+  plus.addEventListener('click', () => { winnersTarget++; renderWinners(); });
+  startMatch.addEventListener('click', () => {
     hostSheet.hidden = true;
-    actions.onStartBomb();
+    actions.onStartMatch(winnersTarget, practice.checked);
   });
   tapBtn.addEventListener('click', () => setMode('tap'));
   stickBtn.addEventListener('click', () => setMode('stick'));
@@ -129,6 +150,10 @@ export function showLobbyHud(root: HTMLElement, team: Team, myId: string, action
   }
 
   hostBtn.addEventListener('click', () => {
+    // 인원 비례 제안: 6명당 1명, 최소 1명 (매번 열 때 다시 계산)
+    winnersTarget = Math.max(1, Math.floor(eligibleCount() / 6));
+    practice.checked = false;
+    renderWinners();
     memberList.replaceChildren(...members.filter((m) => m.playerId !== myId).map((m) => {
       const b = h('button', { type: 'button' }, [m.nickname, h('span', {}, ['넘기기'])]);
       b.addEventListener('click', () => { actions.onTransferHost(m.playerId); hostSheet.hidden = true; });

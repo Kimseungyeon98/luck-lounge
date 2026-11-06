@@ -62,9 +62,13 @@ class LobbyController {
         lobby.transferHost(me(principal), cmd.playerId());
     }
 
-    @MessageMapping("/t/{team}/bomb/start")
-    void startBomb(Principal principal) {
-        lobby.startBomb(me(principal));
+    record MatchCommand(Integer winnersTarget, Boolean practice) {
+    }
+
+    @MessageMapping("/t/{team}/match/start")
+    void startMatch(@Payload MatchCommand cmd, Principal principal) {
+        lobby.startMatch(me(principal), cmd.winnersTarget() == null ? 1 : cmd.winnersTarget(),
+                Boolean.TRUE.equals(cmd.practice()));
     }
 
     @MessageMapping("/t/{team}/bomb/pass")

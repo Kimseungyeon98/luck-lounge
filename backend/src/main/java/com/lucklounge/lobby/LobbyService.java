@@ -2,7 +2,11 @@ package com.lucklounge.lobby;
 
 import java.time.Clock;
 import java.time.Instant;
+import com.lucklounge.record.GameRecords;
+import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ExecutorService;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
@@ -61,13 +65,23 @@ public class LobbyService implements SmartLifecycle {
     private final SimpMessagingTemplate messaging;
     private final ChatFilter chatFilter;
     private final Clock clock;
+    private final GameRecords records;
+    /** 기록은 순서대로, 틱 스레드를 막지 않게 별도 스레드 하나에서 쓴다 */
+    private final ExecutorService recordWriter = Executors.newSingleThreadExecutor(r -> {
+        Thread t = new Thread(r, "game-records");
+        t.setDaemon(true);
+        return t;
+    });
+    /** 팀별로 진행 중인 내기의 DB id (recordWriter 스레드에서만 사용) */
+    private final Map<String, Long> openSessions = new java.util.HashMap<>();
     private ScheduledExecutorService ticker;
     private volatile boolean running;
 
-    LobbyService(SimpMessagingTemplate messaging, ChatFilter chatFilter, Clock clock) {
+    LobbyService(SimpMessagingTemplate messaging, ChatFilter chatFilter, Clock clock, GameRecords records) {
         this.messaging = messaging;
         this.chatFilter = chatFilter;
         this.clock = clock;
+        this.records = records;
     }
 
     public LobbyRoom room(String teamSlug) {
@@ -103,22 +117,28 @@ public class LobbyService implements SmartLifecycle {
     public void sync(String team) {
         broadcastPresence(team);
         broadcastPositions(room(team));
-        room(team).bombInProgress().ifPresent(s -> bombEvent(team, s));
+        room(team).voteInProgress(clock.instant()).ifPresent(v -> matchMessage(team, voteMessage(v)));
+        room(team).roundInProgress().ifPresent(r -> {
+            matchMessage(team, msg("round", "round", r.round()));
+            bombEvent(team, r.start());
+        });
     }
 
-    public void startBomb(LoungePrincipal p) {
-        Object result = room(p.teamSlug()).startBomb(p.playerId(), clock.instant());
-        if (result instanceof BombGame.Started started) {
-            broadcastPositions(room(p.teamSlug()));
-            bombEvent(p.teamSlug(), started);
+    public void startMatch(LoungePrincipal p, int winnersTarget, boolean practice) {
+        Object result = room(p.teamSlug()).startMatch(p.playerId(), winnersTarget, practice, clock.instant());
+        if (result instanceof Match.VoteStarted started) {
+            matchMessage(p.teamSlug(), voteMessage(started));
         } else {
-            String message = switch ((LobbyRoom.StartFailure) result) {
-                case NOT_HOST -> "방장만 시작할 수 있어요.";
-                case ALREADY_RUNNING -> "이미 게임이 진행 중이에요.";
-                case NOT_ENOUGH_PLAYERS -> "2명 이상 모여야 시작할 수 있어요.";
-            };
-            notice(p, "error", message);
+            notice(p, "error", failureMessage((LobbyRoom.StartFailure) result));
         }
+    }
+
+    private static String failureMessage(LobbyRoom.StartFailure f) {
+        return switch (f) {
+            case NOT_HOST -> "방장만 시작할 수 있어요.";
+            case ALREADY_RUNNING -> "이미 진행 중이에요.";
+            case NOT_ENOUGH_PLAYERS -> "2명 이상 모여야 시작할 수 있어요.";
+        };
     }
 
     public void passBomb(LoungePrincipal p) {
@@ -181,8 +201,8 @@ public class LobbyService implements SmartLifecycle {
                 if (r.positionsChanged()) {
                     broadcastPositions(room);
                 }
-                for (BombGame.Event e : r.bombEvents()) {
-                    bombEvent(room.teamSlug(), e);
+                for (Match.Event e : r.matchEvents()) {
+                    onMatchEvent(room, e);
                 }
                 if (r.presenceChanged()) {
                     broadcastPresence(room.teamSlug());
@@ -200,6 +220,89 @@ public class LobbyService implements SmartLifecycle {
 
     private void broadcastPresence(String team) {
         messaging.convertAndSend("/topic/t/" + team + "/presence", room(team).presence());
+    }
+
+    // ---------- 내기 진행 방송과 기록 ----------
+
+    private void onMatchEvent(LobbyRoom room, Match.Event e) {
+        String team = room.teamSlug();
+        switch (e) {
+            case Match.VoteStarted v -> matchMessage(team, voteMessage(v));
+            case Match.VoteEnded v -> {
+                Map<String, Object> m = msg("voteResult", "bomb", v.bomb());
+                m.put("balloon", v.balloon());
+                m.put("abstain", v.abstain());
+                m.put("won", v.won().name());
+                m.put("gameType", v.gameType());
+                m.put("winnersTarget", v.winnersTarget());
+                m.put("participants", v.participants().size());
+                matchMessage(team, m);
+                recordWriter.execute(() -> safely(() -> openSessions.put(team, records.startSession(team, v.gameType(),
+                        v.winnersTarget(), v.practice(), v.bomb(), v.balloon(), v.at()))));
+            }
+            case Match.Cancelled c -> matchMessage(team, msg("cancel", "message", c.reason()));
+            case Match.RoundStarted r -> {
+                broadcastPositions(room);
+                matchMessage(team, msg("round", "round", r.round()));
+                bombEvent(team, r.start());
+            }
+            case Match.BombEvent b -> bombEvent(team, b.event());
+            case Match.RoundEnded r -> {
+                Map<String, Object> m = msg("roundEnd", "round", r.round());
+                m.put("loser", r.loser());
+                m.put("heldMs", r.heldMs());
+                m.put("remaining", r.remaining());
+                m.put("more", r.more());
+                matchMessage(team, m);
+                recordWriter.execute(() -> safely(() -> {
+                    Long session = openSessions.get(team);
+                    if (session != null) {
+                        records.saveRound(session, r.round(), r.loser(), r.heldMs(), r.at(), r.players());
+                    }
+                }));
+            }
+            case Match.Summary s -> {
+                Map<String, Object> m = msg("summary", "participants", s.participants());
+                m.put("practice", s.practice());
+                m.put("winners", s.winners());
+                matchMessage(team, m);
+            }
+            case Match.Finished f -> {
+                matchMessage(team, msg("finish", "at", f.at().toEpochMilli()));
+                recordWriter.execute(() -> safely(() -> {
+                    Long session = openSessions.remove(team);
+                    if (session != null) {
+                        records.endSession(session, f.at());
+                    }
+                }));
+            }
+        }
+    }
+
+    private static Map<String, Object> voteMessage(Match.VoteStarted v) {
+        Map<String, Object> m = msg("vote", "endsInMs", v.endsInMs());
+        m.put("winnersTarget", v.winnersTarget());
+        m.put("practice", v.practice());
+        return m;
+    }
+
+    private static Map<String, Object> msg(String type, String key, Object value) {
+        Map<String, Object> m = new LinkedHashMap<>();
+        m.put("type", type);
+        m.put(key, value);
+        return m;
+    }
+
+    private void matchMessage(String team, Map<String, Object> m) {
+        messaging.convertAndSend("/topic/t/" + team + "/match", (Object) m);
+    }
+
+    private static void safely(Runnable r) {
+        try {
+            r.run();
+        } catch (RuntimeException e) {
+            log.warn("내기 기록 저장 실패", e);
+        }
     }
 
     private void bombEvent(String team, BombGame.Event e) {
@@ -238,6 +341,7 @@ public class LobbyService implements SmartLifecycle {
         if (ticker != null) {
             ticker.shutdownNow();
         }
+        recordWriter.shutdown();
         running = false;
     }
 
