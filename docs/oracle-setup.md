@@ -9,8 +9,11 @@
 ## 1. 가입
 
 1. <https://www.oracle.com/cloud/free/> 에서 **Start for free**
-2. **홈 리전(Home Region)을 `South Korea North (Chuncheon)` 또는 `South Korea Central (Seoul)`로 선택**
+2. **홈 리전(Home Region)을 `Japan Central (Osaka)`로 선택**
    - 나중에 바꿀 수 없습니다. Always Free VM은 홈 리전에서만 만들 수 있습니다.
+   - 한국 리전(춘천·서울)은 가입할 때 열려 있지 않아 오사카로 정했습니다. 국내 리전보다 왕복 지연이 수십 ms 늘지만,
+     서버가 0.1초마다 위치를 보내고 판정도 서버가 하므로 게임에는 영향이 거의 없습니다.
+   - 서버 시간대는 리전과 상관없이 `deploy/docker-compose.yml`의 `TZ: Asia/Seoul`로 한국 시간을 씁니다.
 3. 카드 등록은 본인 확인용입니다. Always Free 자원만 쓰면 청구되지 않습니다.
 4. 계정 종류는 **Free Tier 그대로** 둡니다 (종량제로 바꾸지 않음).
 
@@ -26,7 +29,8 @@
 | Networking | 기본 VCN 생성, **Assign a public IPv4 address** 체크 |
 | SSH keys | **Generate a key pair for me** → 개인 키(`.key`) 다운로드해서 보관 |
 
-- "Out of capacity" 오류가 나면 잠시 뒤 다시 시도하거나 Availability Domain을 바꿔 보세요.
+- "Out of capacity" 오류가 나면 무료 서버 자리가 잠시 모자란 것입니다. 오사카는 Availability Domain이 하나뿐이라 바꿀 곳이 없으니,
+  몇 시간 뒤나 다른 시간대(새벽 등)에 다시 시도하세요. **Fault domain**을 바꿔 보는 것도 방법입니다.
 - 1 OCPU · 4GB로 만드는 이유: 앱이 메모리 1GB 이상을 항상 쓰도록 설정되어 있어서, 사용률이 20%를 넘겨 **유휴 회수(idle reclamation) 대상에서 빠집니다.**
 
 ### 공인 IP 고정
