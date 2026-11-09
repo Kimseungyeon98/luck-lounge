@@ -40,20 +40,30 @@ export interface HudActions {
   onOpenStats(): void;
 }
 
-/** 대기실 위에 올라가는 표시줄: 팀 이름·인원, 설정, 방장 메뉴, 말풍선 입력, 이모티콘 */
+/** 대기실 위에 올라가는 표시줄: 팀 이름·인원, 방장·통계·도움말·설정, 상태줄, 게임 시작, 말풍선 입력, 이모티콘 */
 export function showLobbyHud(root: HTMLElement, team: Team, myId: string, actions: HudActions) {
   let moveMode = loadMoveMode();
   let members: Member[] = [];
+  let hostId: string | null = null;
+  let running = false;
 
+  // ---------- 위쪽: 팀·인원(누르면 명단), 글자가 붙은 아이콘 버튼 ----------
   const count = h('span');
-  const hostBtn = h('button', { type: 'button', className: 'icon-btn', ariaLabel: '방장 메뉴', hidden: true }, ['👑']);
-  const settingsBtn = h('button', { type: 'button', className: 'icon-btn', ariaLabel: '설정' }, ['⚙️']);
-  const statsBtn = h('button', { type: 'button', className: 'icon-btn', ariaLabel: '통계' }, ['📊']);
+  const labeled = (icon: string, label: string) => h('button', { type: 'button', className: 'label-btn' }, [h('span', { ariaHidden: 'true' }, [icon]), label]);
+  const hostBtn = labeled('👑', '방장');
+  hostBtn.hidden = true;
+  const statsBtn = labeled('📊', '통계');
+  const helpBtn = labeled('❔', '도움말');
+  const settingsBtn = labeled('⚙️', '설정');
   statsBtn.addEventListener('click', () => actions.onOpenStats());
   const toast = h('div', { className: 'hud-toast', role: 'status', hidden: true });
   const conn = h('div', { className: 'conn-banner', role: 'status', hidden: true });
 
+  // ---------- 아래쪽: 안내, 상태줄, 게임 시작(방장), 말하기·이모티콘 ----------
   const hint = h('p', { className: 'hud-hint' });
+  const status = h('p', { className: 'hud-status', role: 'status' });
+  const slot = h('div', { className: 'hud-slot' });
+  const startBtn = h('button', { type: 'button', className: 'start-btn', hidden: true }, ['🎲 게임 시작']);
   const chatOpen = h('button', { type: 'button', className: 'pill wide' }, ['💬 말하기']);
   const emoteBtns = EMOTES.map((e) => {
     const b = h('button', { type: 'button', className: 'pill', ariaLabel: `${e} 보내기` }, [e]);
@@ -79,36 +89,84 @@ export function showLobbyHud(root: HTMLElement, team: Team, myId: string, action
     h('button', { type: 'button', className: 'sheet-close' }, ['닫기']),
   ]);
 
-  // 방장 넘기기
-  const memberList = h('div', { className: 'member-list' });
+  // 게임 시작 창: 당첨자 수, 연습판, 시작
   let winnersTarget = 1;
   const winnersOut = h('b', { className: 'stepper-value', ariaLive: 'polite' }, ['1']);
   const minus = h('button', { type: 'button', ariaLabel: '당첨자 줄이기' }, ['−']);
   const plus = h('button', { type: 'button', ariaLabel: '당첨자 늘리기' }, ['+']);
   const winnersNote = h('p', { className: 'sheet-note' });
+  const startReason = h('p', { className: 'sheet-warn', hidden: true }, ['2명 이상 모여야 시작할 수 있어요. 자리비움인 사람은 세지 않아요.']);
   const practice = h('input', { type: 'checkbox', id: 'practice' });
-  const startMatch = h('button', { type: 'button', className: 'sheet-start' }, ['10초 동안 부스로 걸어가 투표']);
-  const hostSheet = h('div', { className: 'sheet', hidden: true, role: 'dialog', ariaLabel: '방장 메뉴' }, [
-    h('h2', {}, ['게임 고르기']),
+  const startMatch = h('button', { type: 'button', className: 'sheet-start' }, ['10초 투표 시작']);
+  const startSheet = h('div', { className: 'sheet', hidden: true, role: 'dialog', ariaLabel: '게임 시작' }, [
+    h('h2', {}, ['게임 시작']),
     h('div', { className: 'sheet-row' }, [h('span', {}, ['오늘 당첨자 수']), h('span', { className: 'stepper' }, [minus, winnersOut, plus])]),
     winnersNote,
     h('label', { className: 'check', htmlFor: 'practice' }, [practice, '연습판 (통계에서 빼요)']),
+    startReason,
     startMatch,
-    h('p', { className: 'sheet-note' }, ['부스 밖에 있으면 투표만 기권이고 게임에는 참가해요.']),
+    h('p', { className: 'sheet-note' }, ['시작하면 모두 10초 동안 원하는 부스로 걸어가요. 부스 밖이면 투표만 기권이고 게임엔 참가해요.']),
+    h('button', { type: 'button', className: 'sheet-close' }, ['닫기']),
+  ]);
+
+  // 방장 메뉴: 게임 시작, 방장 넘기기
+  const memberList = h('div', { className: 'member-list' });
+  const hostStart = h('button', { type: 'button', className: 'sheet-start' }, ['🎲 게임 시작']);
+  const hostSheet = h('div', { className: 'sheet', hidden: true, role: 'dialog', ariaLabel: '방장 메뉴' }, [
+    h('h2', {}, ['방장 메뉴']),
+    hostStart,
     h('h2', {}, ['방장 넘기기']),
-    h('p', { className: 'sheet-note' }, ['방장은 게임 고르기를 시작하고 당첨자 수를 정해요.']),
+    h('p', { className: 'sheet-note' }, ['방장은 게임을 시작하고 당첨자 수를 정해요.']),
     memberList,
     h('button', { type: 'button', className: 'sheet-close' }, ['닫기']),
   ]);
 
-  const teamBox = h('div', { className: 'hud-team' }, [h('b', {}, [team.name]), count]);
+  // 지금 라운지에 있는 사람
+  const peopleList = h('ul', { className: 'people-list' });
+  const peopleSheet = h('div', { className: 'sheet', hidden: true, role: 'dialog', ariaLabel: '접속한 사람' }, [
+    h('h2', {}, ['지금 라운지에 있는 사람']),
+    peopleList,
+    h('button', { type: 'button', className: 'sheet-close' }, ['닫기']),
+  ]);
+
+  // 도움말: 존과 게임 4개
+  const rule = (name: string, text: string) => h('p', {}, [h('b', {}, [name]), ` ${text}`]);
+  const helpSheet = h('div', { className: 'sheet', hidden: true, role: 'dialog', ariaLabel: '도움말' }, [
+    h('h2', {}, ['도움말']),
+    h('div', { className: 'help-zone luck' }, [h('b', {}, ['복불복 존 · 운으로']),
+      rule('시한폭탄', '1~5초 안에 넘기다가, 터질 때 들고 있으면 당첨'),
+      rule('풍선 불기', '차례대로 1~3번 펌프질, 풍선을 터뜨리면 당첨')]),
+    h('div', { className: 'help-zone skill' }, [h('b', {}, ['경쟁 존 · 실력으로']),
+      rule('10초 멈추기', '3초 뒤 사라지는 시계를 딱 10.00초에 멈추기. 가장 먼 사람이 당첨'),
+      rule('탑 쌓기', '움직이는 블록을 눌러 쌓기. 가장 낮게 쌓은 사람이 당첨'),
+      h('p', { className: 'sheet-note' }, ['경쟁 존 부스 위에 서면 혼자 연습할 수 있어요.'])]),
+    h('p', { className: 'sheet-note' }, ['방장이 게임을 시작하면 10초 동안 하고 싶은 게임 부스 위에 서세요. 가장 많이 선 게임을 해요.']),
+    h('button', { type: 'button', className: 'sheet-close guide-again' }, ['처음 안내 다시 보기']),
+    h('button', { type: 'button', className: 'sheet-close' }, ['닫기']),
+  ]);
+
+  // 처음 온 사람 안내 3장 (한 번만)
+  const guideN = h('span', { className: 'guide-n' });
+  const guideT = h('h2', {});
+  const guideD = h('p', {});
+  const guideSkip = h('button', { type: 'button', className: 'guide-skip' }, ['건너뛰기']);
+  const guideNext = h('button', { type: 'button', className: 'guide-next' }, ['다음']);
+  const guide = h('div', { className: 'guide', hidden: true, role: 'dialog', ariaLabel: '처음 온 사람 안내', ariaModal: 'true' }, [
+    h('div', { className: 'guide-card' }, [guideN, guideT, guideD, h('div', { className: 'guide-btns' }, [guideSkip, guideNext])]),
+  ]);
+
+  const teamBox = h('button', { type: 'button', className: 'hud-team', ariaLabel: '접속한 사람 보기' }, [h('b', {}, [team.name]), count]);
   const hud = h('div', { className: 'hud' }, [
-    h('div', { className: 'hud-top' }, [teamBox, h('div', { className: 'hud-buttons' }, [hostBtn, statsBtn, settingsBtn])]),
+    h('div', { className: 'hud-top' }, [teamBox, h('div', { className: 'hud-buttons' }, [hostBtn, statsBtn, helpBtn, settingsBtn])]),
     conn,
     toast,
-    h('div', { className: 'hud-bottom' }, [hint, actionRow, chatBar]),
+    h('div', { className: 'hud-bottom' }, [hint, slot, status, startBtn, actionRow, chatBar]),
     settings,
+    startSheet,
     hostSheet,
+    peopleSheet,
+    helpSheet,
+    guide,
   ]);
   root.replaceChildren(hud);
 
@@ -139,11 +197,12 @@ export function showLobbyHud(root: HTMLElement, team: Team, myId: string, action
       ? `${n}명 중 ${winnersTarget}명 · 1명당 약 ${Math.round(n / winnersTarget)}잔. 당첨자를 빼고 남은 사람끼리 연속으로 해요.`
       : '2명 이상 모여야 시작할 수 있어요.';
     startMatch.disabled = n < 2;
+    startReason.hidden = n >= 2;
   };
   minus.addEventListener('click', () => { winnersTarget--; renderWinners(); });
   plus.addEventListener('click', () => { winnersTarget++; renderWinners(); });
   startMatch.addEventListener('click', () => {
-    closeSheet(hostSheet);
+    closeSheet(startSheet);
     actions.onStartMatch(winnersTarget, practice.checked);
   });
   tapBtn.addEventListener('click', () => setMode('tap'));
@@ -151,15 +210,30 @@ export function showLobbyHud(root: HTMLElement, team: Team, myId: string, action
   setMode(moveMode, false);
 
   settingsBtn.addEventListener('click', () => openSheet(settings));
-  for (const sheet of [settings, hostSheet]) {
-    sheet.querySelector('.sheet-close')!.addEventListener('click', () => closeSheet(sheet));
+  helpBtn.addEventListener('click', () => openSheet(helpSheet));
+  for (const sheet of [settings, startSheet, hostSheet, peopleSheet, helpSheet]) {
+    sheet.querySelectorAll('.sheet-close:not(.guide-again)').forEach((b) => b.addEventListener('click', () => closeSheet(sheet)));
   }
 
-  hostBtn.addEventListener('click', () => {
+  const openStart = () => {
     // 인원 비례 제안: 6명당 1명, 최소 1명 (매번 열 때 다시 계산)
     winnersTarget = Math.max(1, Math.floor(eligibleCount() / 6));
     practice.checked = false;
     renderWinners();
+    openSheet(startSheet);
+  };
+  startBtn.addEventListener('click', openStart);
+  hostStart.addEventListener('click', openStart);
+
+  const renderPeople = () => {
+    peopleList.replaceChildren(...members.map((m) => h('li', {}, [
+      h('span', {}, [m.playerId === myId ? `나 · ${m.nickname}` : m.nickname]),
+      h('span', { className: 'people-tags' }, [m.playerId === hostId ? '👑 방장' : '', m.away ? ' 💤 자리비움' : '']),
+    ])));
+  };
+  teamBox.addEventListener('click', () => { renderPeople(); openSheet(peopleSheet); });
+
+  hostBtn.addEventListener('click', () => {
     memberList.replaceChildren(...members.filter((m) => m.playerId !== myId).map((m) => {
       const b = h('button', { type: 'button' }, [m.nickname, h('span', {}, ['넘기기'])]);
       b.addEventListener('click', () => { actions.onTransferHost(m.playerId); closeSheet(hostSheet); });
@@ -207,21 +281,65 @@ export function showLobbyHud(root: HTMLElement, team: Team, myId: string, action
   let connTimer = 0;
   let wasOffline = false;
 
-  let hostId: string | null = null;
+  /** 상태줄: 지금 무엇을 기다리는지. 방장에게는 게임 시작 버튼 */
+  const renderStatus = () => {
+    const isHost = hostId === myId;
+    startBtn.hidden = running || !isHost;
+    hostBtn.hidden = !isHost;
+    status.hidden = running;
+    const n = members.filter((m) => !m.away).length;
+    if (isHost) {
+      status.textContent = n >= 2 ? `${n}명 모였어요 · 시작하면 10초 동안 투표` : '혼자 있어요 · 2명부터 시작할 수 있어요';
+    } else {
+      const host = members.find((m) => m.playerId === hostId);
+      status.textContent = host ? `${host.nickname}님(방장)이 시작하면 부스로 가요` : '방장을 기다리는 중이에요';
+    }
+  };
+
+  const GUIDE_KEY = 'luck-lounge:guide-seen';
+  const steps = () => [
+    [moveMode === 'stick' ? '화면을 누른 채 끌면 걸어요' : '바닥을 누르면 걸어가요',
+      moveMode === 'stick' ? '내 캐릭터는 주황색 원이 있는 캐릭터예요. 화면 아무 곳이나 누른 채 가고 싶은 쪽으로 끌어 보세요.' : '내 캐릭터는 주황색 원이 있는 캐릭터예요. 가고 싶은 바닥을 눌러 보세요.'],
+    ['왼쪽은 복불복, 오른쪽은 실력', '복불복 존(파랑)은 운으로, 경쟁 존(초록)은 짧은 게임 실력으로 커피 당첨자를 정해요.'],
+    ['방장이 시작하면 부스로 걸어가 투표', '10초 안에 하고 싶은 게임 부스 위에 서세요. 규칙은 위쪽 ❔ 도움말에서 다시 볼 수 있어요.'],
+  ];
+  let guideStep = 0;
+  const showGuide = (i: number) => {
+    const list = steps();
+    guideStep = i;
+    guideN.textContent = `${i + 1} / ${list.length}`;
+    guideT.textContent = list[i][0];
+    guideD.textContent = list[i][1];
+    guideNext.textContent = i === list.length - 1 ? '시작하기' : '다음';
+    guide.hidden = false;
+    guideNext.focus({ preventScroll: true });
+  };
+  const closeGuide = () => {
+    guide.hidden = true;
+    try { localStorage.setItem(GUIDE_KEY, '1'); } catch { /* 저장이 안 되면 다음에 또 보임 */ }
+  };
+  guideNext.addEventListener('click', () => { if (guideStep < steps().length - 1) showGuide(guideStep + 1); else closeGuide(); });
+  guideSkip.addEventListener('click', closeGuide);
+  helpSheet.querySelector('.guide-again')!.addEventListener('click', () => { closeSheet(helpSheet); showGuide(0); });
+  let seen = false;
+  try { seen = localStorage.getItem(GUIDE_KEY) === '1'; } catch { seen = false; }
+  if (!seen) showGuide(0);
+
   return {
     get moveMode() {
       return moveMode;
     },
     setPresence(list: Member[], newHost: string | null) {
       members = list;
-      count.textContent = `접속 ${list.length}명`;
+      count.textContent = `접속 ${list.length}명 ▾`;
       const onlineHost = list.some((m) => m.playerId === newHost) ? newHost : null;
-      hostBtn.hidden = onlineHost !== myId;
       if (hostId !== null && onlineHost !== null && onlineHost !== hostId) {
         const who = list.find((m) => m.playerId === onlineHost);
         showToast(onlineHost === myId ? '내가 방장이 됐어요' : `${who?.nickname ?? '누군가'}님이 방장이 됐어요`);
       }
       if (onlineHost !== null) hostId = onlineHost;
+      renderStatus();
+      if (!peopleSheet.hidden) renderPeople();
     },
     /** 연결 상태를 화면 위 띠로. 처음 연결은 0.8초 넘게 걸릴 때만, 다시 연결되면 2초 동안 알림 */
     setState(state: ConnectionState) {
@@ -247,13 +365,16 @@ export function showLobbyHud(root: HTMLElement, team: Team, myId: string, action
     hideHint() {
       hint.hidden = true;
     },
-    /** 게임 중에는 말하기·이모티콘·방장 메뉴를 숨긴다 */
-    setGameRunning(running: boolean) {
-      actionRow.hidden = running;
+    /** 게임 중에는 상태줄·게임 시작·말하기·이모티콘·방장 메뉴를 숨긴다 */
+    setGameRunning(v: boolean) {
+      running = v;
+      actionRow.hidden = v;
       chatBar.hidden = true;
-      hint.hidden = running || hint.hidden;
-      hostBtn.style.visibility = running ? 'hidden' : '';
+      hint.hidden = v || hint.hidden;
+      renderStatus();
     },
+    /** 아래쪽 줄에 다른 버튼(경쟁 존 연습하기)을 넣는 자리 */
+    slot,
     toast: showToast,
   };
 }

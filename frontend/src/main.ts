@@ -85,6 +85,7 @@ async function boot() {
     submit: (score, extra) => socket?.skillScore(score, extra),
     practice: (type, score, extra) => socket?.practice(type, score, extra),
   });
+  hud.slot.append(skillHud.practiceButton);
 
   socket = connectLounge(team.slug, me.token, {
     onPresence: (p) => {
