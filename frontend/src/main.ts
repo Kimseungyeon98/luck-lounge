@@ -59,6 +59,7 @@ async function boot() {
   const view = await createView();
   const me = await showEntry(app, team, {
     onPreview: (nickname, characterIndex) => view?.preview(nickname, characterIndex),
+    onPreviewArea: (area) => view?.setPreviewArea(area),
   });
   view?.enterLobby(me);
 

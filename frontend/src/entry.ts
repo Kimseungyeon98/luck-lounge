@@ -11,6 +11,8 @@ function el<K extends keyof HTMLElementTagNameMap>(tag: K, props: Record<string,
 export interface EntryHooks {
   /** 닉네임이나 캐릭터가 바뀔 때마다 (3D 미리보기 갱신) */
   onPreview(nickname: string, characterIndex: number): void;
+  /** 카드에 가리지 않아 미리보기 캐릭터가 보이는 영역 (화면 px) */
+  onPreviewArea(area: { x: number; y: number; w: number; h: number }): void;
 }
 
 /**
@@ -36,20 +38,39 @@ export async function showEntry(root: HTMLElement, team: Team, hooks: EntryHooks
     [me ? '지난번 닉네임이에요. 바꿔도 기록은 이어져요.' : '12글자까지 쓸 수 있어요.']);
 
   const charLabel = el('span', { className: 'picker-label', id: 'character-label' });
-  charLabel.setAttribute('aria-live', 'polite');
-  const prev = el('button', { type: 'button', className: 'round', ariaLabel: '이전 캐릭터' }, ['◀']);
-  const next = el('button', { type: 'button', className: 'round', ariaLabel: '다음 캐릭터' }, ['▶']);
+  // 캐릭터 10종을 한눈에 (5×2)
+  const grid = el('div', { className: 'char-grid', role: 'radiogroup' });
+  grid.setAttribute('aria-labelledby', 'character-label');
+  const cells = Array.from({ length: CHARACTER_COUNT }, (_, i) => {
+    const b = el('button', { type: 'button', className: 'char-cell', role: 'radio', ariaLabel: CHARACTER_NAMES[i] }, [
+      el('img', { src: characterDataUrl(i, 1), alt: '' }),
+    ]);
+    b.addEventListener('click', () => { character = i; update(); });
+    grid.append(b);
+    return b;
+  });
 
   const resumeChip = el('div', { className: 'resume-chip', hidden: true });
   const error = el('p', { className: 'error', role: 'alert' });
   const submit = el('button', { type: 'submit', className: 'primary' }, ['라운지 입장']);
 
   const update = () => {
-    charLabel.textContent = `${character + 1} / ${CHARACTER_COUNT} · ${CHARACTER_NAMES[character]}`;
+    charLabel.textContent = `캐릭터 · ${CHARACTER_NAMES[character]}`;
+    cells.forEach((c, i) => {
+      c.setAttribute('aria-checked', String(i === character));
+      c.tabIndex = i === character ? 0 : -1;
+    });
     hooks.onPreview(nickname.value.trim(), character);
   };
-  prev.addEventListener('click', () => { character = (character + CHARACTER_COUNT - 1) % CHARACTER_COUNT; update(); });
-  next.addEventListener('click', () => { character = (character + 1) % CHARACTER_COUNT; update(); });
+  // 방향키로도 고르기
+  grid.addEventListener('keydown', (e) => {
+    const step = { ArrowRight: 1, ArrowLeft: -1, ArrowDown: 5, ArrowUp: -5 }[e.key];
+    if (step === undefined) return;
+    e.preventDefault();
+    character = (character + step + CHARACTER_COUNT) % CHARACTER_COUNT;
+    update();
+    cells[character].focus();
+  });
   nickname.addEventListener('input', update);
 
   const setResume = (p: PlayerView | null) => {
@@ -70,7 +91,8 @@ export async function showEntry(root: HTMLElement, team: Team, hooks: EntryHooks
     el('label', { htmlFor: 'nickname' }, ['닉네임']),
     nickname,
     hint,
-    el('div', { className: 'picker', role: 'group', ariaLabel: '캐릭터 고르기' }, [prev, charLabel, next]),
+    charLabel,
+    grid,
     resumeChip,
     error,
     submit,
@@ -95,15 +117,29 @@ export async function showEntry(root: HTMLElement, team: Team, hooks: EntryHooks
     card.append(toggle, list);
   }
 
-  root.replaceChildren(el('main', { className: 'entry' }, [
-    el('header', { className: 'entry-head' }, [
+  const head = el('header', { className: 'entry-head' }, [
       el('p', { className: 'brand' }, ['운빨 라운지']),
       el('h1', {}, [team.name]),
       el('p', { className: 'sub' }, ['운으로, 실력으로, 오늘의 커피 내기']),
-    ]),
-    card,
-  ]));
+  ]);
+  const main = el('main', { className: 'entry' }, [head, card]);
+  root.replaceChildren(main);
   update();
+
+  // 미리보기 캐릭터는 카드에 가리지 않는 곳에: 세로 화면은 제목과 카드 사이, 가로 화면은 카드 왼쪽
+  const reportArea = () => {
+    if (!main.isConnected) return;
+    const c = card.getBoundingClientRect();
+    const hd = head.getBoundingClientRect();
+    if (innerWidth > innerHeight && c.left > innerWidth * 0.35) hooks.onPreviewArea({ x: 0, y: hd.bottom, w: c.left, h: innerHeight - hd.bottom });
+    // 제목과 카드 사이가 좁으면(작은 휴대폰) 제목 뒤까지 써서 캐릭터를 보여 준다
+    else if (c.top - hd.bottom < 150) hooks.onPreviewArea({ x: 0, y: hd.top + 8, w: innerWidth, h: c.top - hd.top - 8 });
+    else hooks.onPreviewArea({ x: 0, y: hd.bottom, w: innerWidth, h: c.top - hd.bottom });
+  };
+  reportArea();
+  new ResizeObserver(reportArea).observe(main);
+  window.addEventListener('resize', reportArea);
+  void document.fonts?.ready.then(reportArea);
 
   return new Promise<Joined>((resolve) => {
     card.addEventListener('submit', async (e) => {
