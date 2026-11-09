@@ -698,7 +698,11 @@ export class LoungeView {
     } else {
       this.camGoal.set(Math.max(-3.0, Math.min(2.6, mp.x - 0.5)), 0.3, Math.max(-3.2, Math.min(2.4, mp.z - 0.3)));
     }
-    this.zoomGoal = this.mode === 'preview' ? previewZoom : this.voting ? 0.64 : this.bombState || this.balloonState ? 0.95 : 1.05;
+    // 세로로 긴 휴대폰에서는 대기실을 조금 멀리서 (가로로 6.5m는 보이게, 부스 이름표가 잘리지 않게)
+    const cw = this.container.clientWidth || 1;
+    const ch = this.container.clientHeight || 1;
+    const lobbyZoom = Math.min(1.05, (this.viewHeight * (cw / ch > 1 ? 0.8 : 1) * (cw / ch)) / 6.5);
+    this.zoomGoal = this.mode === 'preview' ? previewZoom : this.voting ? 0.64 : this.bombState || this.balloonState ? 0.95 : lobbyZoom;
     if (this.bombState?.holder) {
       const h = this.people.get(this.bombState.holder);
       if (h) {

@@ -1,5 +1,7 @@
 import type { GameType, MatchMessage } from './net/loungeSocket';
 import { REVEAL_EACH_MS, REVEAL_TAIL_MS } from './skillHud';
+import { characterDataUrl } from './characters';
+import { sfx } from './sound';
 import type { LoungeView } from './three/LoungeView';
 
 function h<K extends keyof HTMLElementTagNameMap>(tag: K, props: Record<string, unknown> = {}, children: (Node | string)[] = []): HTMLElementTagNameMap[K] {
@@ -12,7 +14,7 @@ function h<K extends keyof HTMLElementTagNameMap>(tag: K, props: Record<string, 
  * 내기 진행 표시: 투표 카운트다운과 부스별 인원, 결과 발표, 판 사이 안내, 오늘의 결과 요약.
  * 시한폭탄 한 판 안의 표시는 bombHud 가 맡는다.
  */
-export function createMatchHud(root: HTMLElement, view: LoungeView | null, teamName: string, myId: string, nameOf: (id: string) => string, toast: (t: string) => void, openStats: () => void) {
+export function createMatchHud(root: HTMLElement, view: LoungeView | null, teamName: string, myId: string, nameOf: (id: string) => string, toast: (t: string) => void, openStats: () => void, charOf: (id: string) => number) {
   const GAME_NAME: Record<GameType, string> = { BOMB: '시한폭탄', BALLOON: '풍선', STOP: '10초 멈추기', TOWER: '탑 쌓기' };
   const GAMES: GameType[] = ['BOMB', 'BALLOON', 'STOP', 'TOWER'];
   const isSkill = (g?: GameType) => g === 'STOP' || g === 'TOWER';
@@ -24,13 +26,14 @@ export function createMatchHud(root: HTMLElement, view: LoungeView | null, teamN
     h('p', { className: 'vote-title' }, ['원하는 게임 부스로 걸어가세요']), count, h('div', { className: 'tally' }, [...tGames, tNone]),
   ]);
   const banner = h('div', { className: 'match-banner', hidden: true, role: 'status' });
-  const sumList = h('ol');
+  const sumList = h('ol', { className: 'sum-list' });
+  const confetti = h('div', { className: 'confetti', ariaHidden: 'true' });
   const sumMeta = h('p', { className: 'sum-meta' });
   const copy = h('button', { type: 'button' }, ['결과 복사']);
   const stats = h('button', { type: 'button' }, ['통계 보기']);
   const close = h('button', { type: 'button', className: 'primary2' }, ['닫기']);
   const summary = h('div', { className: 'match-summary', hidden: true, role: 'dialog', ariaLabel: '오늘의 결과' }, [
-    h('h2', {}, ['오늘의 커피 담당']), sumList, sumMeta, h('div', { className: 'sum-btns three' }, [copy, stats, close]),
+    confetti, h('h2', {}, ['☕ 오늘의 커피 담당']), sumList, sumMeta, h('div', { className: 'sum-btns three' }, [copy, stats, close]),
   ]);
   stats.addEventListener('click', () => { summary.hidden = true; openStats(); });
   // 투표 중 내가 어느 부스에 서 있는지
@@ -41,6 +44,24 @@ export function createMatchHud(root: HTMLElement, view: LoungeView | null, teamN
   let voteEndsAt = 0;
   let bannerTimer = 0;
   let copyText = '';
+  let lastCount = -1;
+  /** 경쟁 게임 1등 (복사 문구용) */
+  let skillTop: { name: string; score: string } | null = null;
+  const reduceMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false;
+  const celebrate = () => {
+    confetti.replaceChildren();
+    if (reduceMotion) return;
+    const colors = ['#FF6A3D', '#2F6BFF', '#12A37A', '#F2C94C', '#D565B0'];
+    for (let i = 0; i < 26; i++) {
+      const p = h('i');
+      p.style.left = `${Math.random() * 100}%`;
+      p.style.background = colors[i % colors.length];
+      p.style.animationDelay = `${Math.random() * 0.5}s`;
+      p.style.animationDuration = `${1.4 + Math.random() * 1.2}s`;
+      p.style.transform = `rotate(${Math.random() * 180}deg)`;
+      confetti.append(p);
+    }
+  };
 
   const showBanner = (title: string, sub: string, ms: number) => {
     banner.replaceChildren(h('b', {}, [title]), h('span', {}, [sub]));
@@ -67,10 +88,16 @@ export function createMatchHud(root: HTMLElement, view: LoungeView | null, teamN
   close.addEventListener('click', () => { summary.hidden = true; });
 
   return {
+    /** 경쟁 게임 결과의 1등 (복사 문구에 넣음) */
+    setSkillTop(top: { name: string; score: string } | null) {
+      skillTop = top;
+    },
     handle(m: MatchMessage, onRunning: (running: boolean) => void) {
       switch (m.type) {
         case 'vote': {
           summary.hidden = true;
+          skillTop = null;
+          lastCount = -1;
           onRunning(true);
           view?.setVoting(true);
           voteEndsAt = performance.now() + (m.endsInMs ?? 10000);
@@ -79,6 +106,10 @@ export function createMatchHud(root: HTMLElement, view: LoungeView | null, teamN
           const render = () => {
             const left = Math.max(0, Math.ceil((voteEndsAt - performance.now()) / 1000));
             count.textContent = String(left);
+            // 마지막 3초는 숫자를 크게, 빨갛게, 똑딱 소리
+            count.classList.toggle('last', left <= 3 && left > 0);
+            if (left !== lastCount && left <= 3 && left > 0) sfx.tick();
+            lastCount = left;
             const c = view?.voteCounts() ?? { BOMB: 0, BALLOON: 0, STOP: 0, TOWER: 0, abstain: 0 };
             GAMES.forEach((g, i) => { tGames[i].textContent = `${SHORT[g]} ${c[g]}`; });
             const mine = view?.myBooth() ?? null;
@@ -120,15 +151,20 @@ export function createMatchHud(root: HTMLElement, view: LoungeView | null, teamN
           const winners = m.winners ?? [];
           const skill = isSkill(m.gameType);
           const place = (r: number) => (r === 1 ? '꼴찌' : `뒤에서 ${r}등`);
-          sumList.replaceChildren(...winners.map((w) => h('li', {}, [`${w.playerId === myId ? '나' : nameOf(w.playerId)} (${skill ? place(w.round) : `${w.round}판`})`])));
+          sumList.replaceChildren(...winners.map((w) => h('li', { className: w.playerId === myId ? 'me' : '' }, [
+            h('img', { src: characterDataUrl(charOf(w.playerId), 1), alt: '' }),
+            h('span', { className: 'sum-name' }, [w.playerId === myId ? '나' : nameOf(w.playerId)]),
+            h('span', { className: 'sum-place' }, [skill ? place(w.round) : `${w.round}판`]),
+          ])));
           const game = GAME_NAME[m.gameType ?? 'BOMB'];
           sumMeta.textContent = `${game} · ${m.participants}명 참가 · ${m.practice ? '연습판 (통계에서 빠져요)' : '기록에 저장했어요'}`;
           const d = new Date();
-          copyText = `[운빨 라운지] ${d.getMonth() + 1}월 ${d.getDate()}일 ${teamName} 커피 담당: ${winners.map((w) => nameOf(w.playerId)).join(', ')} (${game}, ${m.participants}명 참가)`;
+          const top = skill && skillTop ? ` · 1등 ${skillTop.name} ${skillTop.score}` : '';
+          copyText = `[운빨 라운지] ${d.getMonth() + 1}월 ${d.getDate()}일 ${teamName} 커피 담당: ${winners.map((w) => nameOf(w.playerId)).join(', ')} (${game}, ${m.participants}명 참가${top})`;
           copy.textContent = '결과 복사';
           // 경쟁 게임은 순위 발표가 끝난 뒤에
           const delay = skill ? (m.participants ?? 2) * REVEAL_EACH_MS + REVEAL_TAIL_MS : 2900;
-          window.setTimeout(() => { summary.hidden = false; }, delay);
+          window.setTimeout(() => { summary.hidden = false; celebrate(); }, delay);
           break;
         }
         case 'finish':

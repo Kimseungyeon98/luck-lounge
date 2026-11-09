@@ -8,6 +8,7 @@ import { createMatchHud } from './matchHud';
 import { createBalloonHud } from './balloonHud';
 import { createStatsSheet } from './statsSheet';
 import { createSkillHud } from './skillHud';
+import { formatScore } from './skill/games';
 import { closeSheet } from './sheets';
 import { boothAt } from './three/lounge';
 import { connectLounge } from './net/loungeSocket';
@@ -69,6 +70,7 @@ async function boot() {
 
   let socket: ReturnType<typeof connectLounge> | null = null;
   const names = new Map<string, string>([[me.playerId, me.nickname]]);
+  const chars = new Map<string, number>([[me.playerId, me.characterIndex]]);
   const hud = showLobbyHud(app, team, me.playerId, {
     onChat: (text) => socket?.chat(text),
     onEmote: (emoji) => socket?.emote(emoji),
@@ -81,7 +83,7 @@ async function boot() {
   const bombHud = createBombHud(app, me.playerId, nameOf, () => socket?.passBomb());
   const statsSheet = createStatsSheet(app, team.slug, team.name, me.playerId);
   const balloonHud = createBalloonHud(app, me.playerId, nameOf, (n) => socket?.pump(n));
-  const matchHud = createMatchHud(app, view, team.name, me.playerId, nameOf, hud.toast, () => statsSheet.open());
+  const matchHud = createMatchHud(app, view, team.name, me.playerId, nameOf, hud.toast, () => statsSheet.open(), (id) => chars.get(id) ?? 0);
   const skillHud = createSkillHud(app, me.playerId, nameOf, {
     submit: (score, extra) => socket?.skillScore(score, extra),
     practice: (type, score, extra) => socket?.practice(type, score, extra),
@@ -90,7 +92,10 @@ async function boot() {
 
   socket = connectLounge(team.slug, me.token, {
     onPresence: (p) => {
-      for (const m of p.players) names.set(m.playerId, m.nickname);
+      for (const m of p.players) {
+        names.set(m.playerId, m.nickname);
+        chars.set(m.playerId, m.characterIndex);
+      }
       view?.setPresence(p.players, p.hostId);
       hud.setPresence(p.players, p.hostId);
     },
@@ -146,7 +151,11 @@ async function boot() {
     onSkill: (k) => {
       if (k.type === 'start') skillHud.start(k);
       else if (k.type === 'progress') skillHud.progress(k);
-      else if (k.type === 'result') skillHud.result(k);
+      else if (k.type === 'result') {
+        skillHud.result(k);
+        const first = k.ranking?.[0];
+        matchHud.setSkillTop(first && first.score != null && k.gameType ? { name: nameOf(first.player), score: formatScore(k.gameType, first.score) } : null);
+      }
     },
     onBalloon: (b) => {
       if (b.type === 'start' && b.order && b.turn) {
