@@ -523,6 +523,11 @@ export class LoungeView {
   }
 
   /** 지금 부스 위에 서 있는 인원 (화면 표시용. 실제 집계는 서버가 한다) */
+  /** 내가 서 있는 부스 (없으면 null) */
+  myBooth(): GameType | null {
+    return boothAt(this.me.position.x, this.me.position.z);
+  }
+
   voteCounts(): Record<GameType, number> & { abstain: number } {
     const c = { BOMB: 0, BALLOON: 0, STOP: 0, TOWER: 0, abstain: 0 };
     for (const p of this.people.values()) {

@@ -17,6 +17,7 @@ export function createMatchHud(root: HTMLElement, view: LoungeView | null, teamN
   const GAMES: GameType[] = ['BOMB', 'BALLOON', 'STOP', 'TOWER'];
   const isSkill = (g?: GameType) => g === 'STOP' || g === 'TOWER';
   const count = h('div', { className: 'vote-count' });
+  const SHORT: Record<GameType, string> = { BOMB: '폭탄', BALLOON: '풍선', STOP: '10초', TOWER: '탑' };
   const tGames = GAMES.map((g) => h('span', { className: `g-${g.toLowerCase()}` }));
   const tNone = h('span', { className: 'n' });
   const voteBar = h('div', { className: 'vote-bar', hidden: true, role: 'status' }, [
@@ -32,7 +33,9 @@ export function createMatchHud(root: HTMLElement, view: LoungeView | null, teamN
     h('h2', {}, ['오늘의 커피 담당']), sumList, sumMeta, h('div', { className: 'sum-btns three' }, [copy, stats, close]),
   ]);
   stats.addEventListener('click', () => { summary.hidden = true; openStats(); });
-  root.append(voteBar, banner, summary);
+  // 투표 중 내가 어느 부스에 서 있는지
+  const myVote = h('div', { className: 'my-vote', hidden: true, role: 'status' });
+  root.append(voteBar, myVote, banner, summary);
 
   let voteTimer = 0;
   let voteEndsAt = 0;
@@ -49,6 +52,7 @@ export function createMatchHud(root: HTMLElement, view: LoungeView | null, teamN
   const stopVote = () => {
     clearInterval(voteTimer);
     voteBar.hidden = true;
+    myVote.hidden = true;
     view?.setVoting(false);
   };
 
@@ -71,11 +75,15 @@ export function createMatchHud(root: HTMLElement, view: LoungeView | null, teamN
           view?.setVoting(true);
           voteEndsAt = performance.now() + (m.endsInMs ?? 10000);
           voteBar.hidden = false;
+          myVote.hidden = false;
           const render = () => {
             const left = Math.max(0, Math.ceil((voteEndsAt - performance.now()) / 1000));
             count.textContent = String(left);
             const c = view?.voteCounts() ?? { BOMB: 0, BALLOON: 0, STOP: 0, TOWER: 0, abstain: 0 };
-            GAMES.forEach((g, i) => { tGames[i].textContent = `${GAME_NAME[g]} ${c[g]}`; });
+            GAMES.forEach((g, i) => { tGames[i].textContent = `${SHORT[g]} ${c[g]}`; });
+            const mine = view?.myBooth() ?? null;
+            myVote.textContent = mine ? `내 표: ${GAME_NAME[mine]}` : '부스 밖 · 투표는 기권, 게임엔 참가해요';
+            myVote.classList.toggle('on', !!mine);
             tNone.textContent = `기권 ${c.abstain}`;
           };
           render();

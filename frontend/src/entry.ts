@@ -85,7 +85,7 @@ export async function showEntry(root: HTMLElement, team: Team, hooks: EntryHooks
       b.addEventListener('click', () => { setResume(m); list.hidden = true; toggle.setAttribute('aria-expanded', 'false'); });
       list.append(b);
     }
-    const toggle = el('button', { type: 'button', className: 'link' }, ['이미 들어온 적 있나요? 내 이름으로 이어하기']);
+    const toggle = el('button', { type: 'button', className: 'secondary' }, ['다른 휴대폰에서 왔어요 · 내 이름 찾기']);
     toggle.setAttribute('aria-expanded', 'false');
     toggle.setAttribute('aria-controls', 'members');
     toggle.addEventListener('click', () => {
@@ -99,7 +99,7 @@ export async function showEntry(root: HTMLElement, team: Team, hooks: EntryHooks
     el('header', { className: 'entry-head' }, [
       el('p', { className: 'brand' }, ['운빨 라운지']),
       el('h1', {}, [team.name]),
-      el('p', { className: 'sub' }, ['실력은 필요 없어요']),
+      el('p', { className: 'sub' }, ['운으로, 실력으로, 오늘의 커피 내기']),
     ]),
     card,
   ]));

@@ -1,6 +1,7 @@
 import { characterDataUrl } from './characters';
 import type { Best, SkillType } from './net/loungeSocket';
 import { SKILL_NAME, formatScore } from './skill/games';
+import { closeSheet, openSheet } from './sheets';
 
 function h<K extends keyof HTMLElementTagNameMap>(tag: K, props: Record<string, unknown> = {}, children: (Node | string)[] = []): HTMLElementTagNameMap[K] {
   const node = Object.assign(document.createElement(tag), props) as HTMLElementTagNameMap[K];
@@ -38,7 +39,7 @@ export function createStatsSheet(root: HTMLElement, slug: string, teamName: stri
     close,
   ]);
   root.append(sheet);
-  close.addEventListener('click', () => { sheet.hidden = true; });
+  close.addEventListener('click', () => closeSheet(sheet));
 
   async function load(period: Period) {
     tabs.forEach((t) => t.b.setAttribute('aria-selected', String(t.p === period)));
@@ -76,7 +77,7 @@ export function createStatsSheet(root: HTMLElement, slug: string, teamName: stri
 
   return {
     open() {
-      sheet.hidden = false;
+      openSheet(sheet);
       void load('this');
       void loadBests();
     },
