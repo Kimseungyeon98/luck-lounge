@@ -16,7 +16,32 @@ export interface BombMessage {
   loser: string | null;
   heldMs: number | null;
 }
-export interface Notice { type: string; message: string }
+export interface Best { playerId: string; nickname: string; characterIndex: number; score: number; extra: number | null }
+/** 나에게만 오는 안내. type 'practice' 면 연습 기록 결과 */
+export interface Notice {
+  type: string;
+  message?: string;
+  gameType?: SkillType;
+  score?: number;
+  myBest?: Best | null;
+  teamBest?: Best | null;
+  newMyBest?: boolean;
+  newTeamBest?: boolean;
+}
+export type SkillType = 'STOP' | 'TOWER';
+export type GameType = 'BOMB' | 'BALLOON' | SkillType;
+export interface SkillEntry { player: string; score: number | null; extra: number | null }
+export interface SkillMessage {
+  type: 'start' | 'progress' | 'result';
+  gameType?: SkillType;
+  startsInMs?: number;
+  playMs?: number;
+  players?: string[];
+  lowerBetter?: boolean;
+  done?: number;
+  total?: number;
+  ranking?: SkillEntry[];
+}
 export interface BalloonMessage {
   type: 'start' | 'turn' | 'pump' | 'pop';
   order?: string[];
@@ -37,16 +62,15 @@ export interface MatchMessage {
   endsInMs?: number;
   winnersTarget?: number;
   practice?: boolean;
-  bomb?: number;
-  balloon?: number;
+  votes?: Record<GameType, number>;
   abstain?: number;
-  won?: 'BOMB' | 'BALLOON';
+  won?: GameType;
   participants?: number;
   message?: string;
   round?: number;
   loser?: string;
   heldMs?: number;
-  gameType?: 'BOMB' | 'BALLOON';
+  gameType?: GameType;
   pumpCount?: number;
   pumpLimit?: number;
   remaining?: number;
@@ -62,6 +86,7 @@ export interface LoungeSocketHandlers {
   onNotice(n: Notice): void;
   onMatch(m: MatchMessage): void;
   onBalloon(m: BalloonMessage): void;
+  onSkill(m: SkillMessage): void;
   onState(state: ConnectionState): void;
 }
 
@@ -75,6 +100,8 @@ export interface LoungeSocket {
   startMatch(winnersTarget: number, practice: boolean): void;
   passBomb(): void;
   pump(n: number): void;
+  skillScore(score: number, extra: number | null): void;
+  practice(gameType: SkillType, score: number, extra: number | null): void;
   close(): void;
 }
 
@@ -106,6 +133,7 @@ export function connectLounge(slug: string, token: string, h: LoungeSocketHandle
     client.subscribe('/user/queue/me', json<Notice>(h.onNotice));
     client.subscribe(`/topic/t/${slug}/match`, json<MatchMessage>(h.onMatch));
     client.subscribe(`/topic/t/${slug}/balloon`, json<BalloonMessage>(h.onBalloon));
+    client.subscribe(`/topic/t/${slug}/skill`, json<SkillMessage>(h.onSkill));
     client.publish({ destination: `/app/t/${slug}/presence/sync`, body: '' });
   };
 
@@ -137,6 +165,8 @@ export function connectLounge(slug: string, token: string, h: LoungeSocketHandle
     startMatch: (winnersTarget, practice) => send('match/start', { winnersTarget, practice }),
     passBomb: () => send('bomb/pass', {}),
     pump: (n) => send('balloon/pump', { pumps: n }),
+    skillScore: (score, extra) => send('skill/score', { score, extra }),
+    practice: (gameType, score, extra) => send('skill/practice', { gameType, score, extra }),
     close: () => void client.deactivate(),
   };
 }

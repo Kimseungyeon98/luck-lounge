@@ -28,12 +28,36 @@ public class StatsService {
     public record Stats(String period, String label, int days, int totalWins, List<Row> rows) {
     }
 
+    /** 경쟁 게임 하나의 최고 기록. lowerBetter: 10초 멈추기처럼 작을수록 좋은지 */
+    public record GameBest(String gameType, boolean lowerBetter, GameRecords.Best team, GameRecords.Best mine) {
+    }
+
+    /** 경쟁 존 게임과 점수 방향 (lobby.SkillGame.Kind 와 같게) */
+    private static final java.util.Map<String, Boolean> SKILL_GAMES = new java.util.LinkedHashMap<>();
+
+    static {
+        SKILL_GAMES.put("STOP", true);
+        SKILL_GAMES.put("TOWER", false);
+    }
+
     private final JdbcClient jdbc;
     private final Clock clock;
+    private final GameRecords records;
 
-    StatsService(JdbcClient jdbc, Clock clock) {
+    StatsService(JdbcClient jdbc, Clock clock, GameRecords records) {
         this.jdbc = jdbc;
         this.clock = clock;
+        this.records = records;
+    }
+
+    @Transactional(readOnly = true)
+    public List<GameBest> bests(String slug, UUID playerId) {
+        jdbc.sql("select id from team where slug = :slug").param("slug", slug).query(Long.class)
+                .optional().orElseThrow(() -> new NotFoundException("없는 팀 링크예요. 링크를 다시 확인해 주세요."));
+        return SKILL_GAMES.entrySet().stream().map(e -> {
+            GameRecords.Bests b = records.bests(slug, e.getKey(), e.getValue(), playerId);
+            return new GameBest(e.getKey(), e.getValue(), b.team(), b.mine());
+        }).toList();
     }
 
     @Transactional(readOnly = true)

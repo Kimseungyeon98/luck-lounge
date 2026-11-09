@@ -79,7 +79,26 @@ class LobbyController {
         lobby.pumpBalloon(me(principal), cmd.pumps() == null ? 1 : cmd.pumps());
     }
 
-    @MessageMapping("/t/{team}/bomb/pass")
+    record SkillCommand(String gameType, Double score, Double extra) {
+    }
+
+    /** 내기 중 경쟁 게임 점수 */
+    @MessageMapping("/t/{team}/skill/score")
+    void skillScore(@Payload SkillCommand cmd, Principal principal) {
+        if (cmd.score() != null) {
+            lobby.submitSkill(me(principal), cmd.score(), cmd.extra());
+        }
+    }
+
+    /** 부스 위에서 혼자 연습한 점수 */
+    @MessageMapping("/t/{team}/skill/practice")
+    void skillPractice(@Payload SkillCommand cmd, Principal principal) {
+        if (cmd.score() != null) {
+            lobby.practice(me(principal), cmd.gameType(), cmd.score(), cmd.extra());
+        }
+    }
+
+        @MessageMapping("/t/{team}/bomb/pass")
     void passBomb(Principal principal) {
         lobby.passBomb(me(principal));
     }

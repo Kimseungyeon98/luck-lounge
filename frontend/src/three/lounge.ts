@@ -2,7 +2,10 @@ import * as THREE from 'three';
 import { canvasTexture, mat, mesh } from './materials';
 import { signLabel } from './labels';
 
+export type GameType = 'BOMB' | 'BALLOON' | 'STOP' | 'TOWER';
+
 export interface Booth {
+  id: GameType;
   name: string;
   x: number;
   z: number;
@@ -10,10 +13,29 @@ export interface Booth {
   animate(t: number): void;
 }
 
+/**
+ * 게임 부스 자리. 왼쪽이 복불복 존, 오른쪽이 경쟁 존.
+ * 서버 backend/.../lobby/Match.java 의 Booth 와 같은 값이어야 한다.
+ */
+export const BOOTHS: { id: GameType; name: string; x: number; z: number; skill: boolean }[] = [
+  { id: 'BOMB', name: '시한폭탄', x: -3.4, z: 0.7, skill: false },
+  { id: 'BALLOON', name: '풍선 불기', x: -3.4, z: 3.7, skill: false },
+  { id: 'STOP', name: '10초 멈추기', x: 3.4, z: 0.7, skill: true },
+  { id: 'TOWER', name: '탑 쌓기', x: 3.4, z: 3.7, skill: true },
+];
+export const BOOTH_RADIUS = 1.45;
+
+/** 이 자리가 어느 부스 위인지 (없으면 null) */
+export function boothAt(x: number, z: number): GameType | null {
+  for (const b of BOOTHS) if (Math.hypot(x - b.x, z - b.z) < BOOTH_RADIUS) return b.id;
+  return null;
+}
+
 /** 걸을 수 없는 곳. 서버 backend/.../lobby/Obstacles.java 와 같은 값이어야 한다. */
 export function blocked(x: number, z: number): boolean {
   if (x < -5.4 || x > 5.4 || z < -3.6 || z > 5.2) return true;
-  const circles = [[-0.4, -2.4, 0.95], [-5.2, -4.4, 0.6], [5.1, -4.4, 0.6], [-5.2, 4.7, 0.6], [5.1, 4.7, 0.6], [-3.0, 2.4, 0.75], [3.0, 2.4, 0.75]];
+  const circles = [[-0.4, -2.4, 0.95], [-5.2, -4.4, 0.6], [5.1, -4.4, 0.6], [-5.2, 4.7, 0.6], [5.1, 4.7, 0.6],
+    ...BOOTHS.map((b) => [b.x, b.z - 0.2, 0.75])];
   for (const [cx, cz, r] of circles) if (Math.hypot(x - cx, z - cz) < r) return true;
   return x > -2.6 && x < 1.8 && z > -5.0 && z < -3.75;
 }
@@ -88,7 +110,7 @@ export function buildLounge(): Lounge {
   bg.fillStyle = '#FFFFFF';
   bg.font = 'bold 34px sans-serif';
   bg.textAlign = 'center';
-  bg.fillText('이번 달 통계', 128, 70);
+  bg.fillText('통계 · 최고 기록', 128, 70);
   bg.fillStyle = '#FF9B78';
   bg.font = '24px sans-serif';
   bg.fillText('눌러서 보기', 128, 116);
@@ -123,7 +145,8 @@ export function buildLounge(): Lounge {
   const booths: Booth[] = [];
   const signs: THREE.Sprite[] = [];
   const boothGroups: THREE.Group[] = [];
-  const booth = (name: string, x: number, z: number, color: number, prop: THREE.Group, animate: (t: number) => void) => {
+  const booth = (id: GameType, color: number, prop: THREE.Group, animate: (t: number) => void) => {
+    const { name, x, z } = BOOTHS.find((bt) => bt.id === id)!;
     const b = new THREE.Group();
     b.position.set(x, 0, z);
     b.add(mesh(new THREE.CylinderGeometry(1.45, 1.55, 0.12, 40), color, 0, 0.06, 0));
@@ -136,8 +159,21 @@ export function buildLounge(): Lounge {
     signs.push(sign);
     group.add(b);
     boothGroups.push(b);
-    booths.push({ name, x, z, radius: 1.4, animate });
+    booths.push({ id, name, x, z, radius: 1.4, animate });
   };
+
+  // 구역 바닥: 왼쪽 복불복 존(파랑), 오른쪽 경쟁 존(초록)
+  for (const [x, color, label, labelColor] of [[-3.75, 0x2f6bff, '복불복 존', '#2F6BFF'], [3.65, 0x12a37a, '경쟁 존', '#12A37A']] as const) {
+    const zone = new THREE.Mesh(new THREE.PlaneGeometry(4.3, 8.6), new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.08, depthWrite: false }));
+    zone.rotation.x = -Math.PI / 2;
+    zone.position.set(x, 0.005, 0.85);
+    group.add(zone);
+    const sign = signLabel(label, labelColor);
+    sign.position.set(x, 2.9, -2.3);
+    sign.scale.multiplyScalar(1.15);
+    group.add(sign);
+    signs.push(sign);
+  }
 
   const bomb = new THREE.Group();
   bomb.add(mesh(new THREE.BoxGeometry(0.9, 0.8, 0.9), 0x8c7a66, 0, 0.4, 0));
@@ -149,7 +185,7 @@ export function buildLounge(): Lounge {
   const spark = new THREE.Mesh(new THREE.SphereGeometry(0.07, 8, 6), new THREE.MeshBasicMaterial({ color: 0xffc233 }));
   spark.position.set(0.13, 2.0, 0);
   bomb.add(spark);
-  booth('시한폭탄', -3.0, 2.6, 0xff6a3d, bomb, (t) => spark.scale.setScalar(0.8 + Math.sin(t * 18) * 0.3));
+  booth('BOMB', 0xff6a3d, bomb, (t) => spark.scale.setScalar(0.8 + Math.sin(t * 18) * 0.3));
 
   const balloonProp = new THREE.Group();
   balloonProp.add(mesh(new THREE.BoxGeometry(0.9, 0.8, 0.9), 0x8c7a66, 0, 0.4, 0));
@@ -157,9 +193,43 @@ export function buildLounge(): Lounge {
   const balloon = mesh(new THREE.SphereGeometry(0.55, 20, 16), 0xe84b5f, -0.05, 1.75, 0);
   balloonProp.add(balloon);
   balloonProp.add(mesh(new THREE.ConeGeometry(0.09, 0.14, 8), 0xe84b5f, -0.05, 1.08, 0));
-  booth('풍선', 3.0, 2.6, 0x2f6bff, balloonProp, (t) => {
+  booth('BALLOON', 0x2f6bff, balloonProp, (t) => {
     const s = 1 + Math.sin(t * 1.6) * 0.06;
     balloon.scale.set(s, s * 1.15, s);
+  });
+
+  // 경쟁 존: 큰 스톱워치
+  const stopProp = new THREE.Group();
+  stopProp.add(mesh(new THREE.BoxGeometry(0.9, 0.8, 0.9), 0x8c7a66, 0, 0.4, 0));
+  const watch = new THREE.Group();
+  const body = mesh(new THREE.CylinderGeometry(0.55, 0.55, 0.18, 32), 0xe8edf2, 0, 0, 0);
+  body.rotation.x = Math.PI / 2;
+  watch.add(body);
+  const face = new THREE.Mesh(new THREE.CircleGeometry(0.47, 32), new THREE.MeshBasicMaterial({ color: 0xffffff }));
+  face.position.z = 0.1;
+  watch.add(face);
+  const hand = mesh(new THREE.BoxGeometry(0.04, 0.4, 0.02), 0xe0482a, 0, 0, 0.12, false);
+  hand.geometry.translate(0, 0.17, 0);
+  watch.add(hand);
+  watch.add(mesh(new THREE.CylinderGeometry(0.08, 0.08, 0.16, 12), 0x12a37a, 0, 0.64, 0));
+  watch.position.set(0, 1.45, 0);
+  stopProp.add(watch);
+  booth('STOP', 0x12a37a, stopProp, (t) => { hand.rotation.z = -t * 2.2; });
+
+  // 경쟁 존: 쌓은 블록
+  const towerProp = new THREE.Group();
+  towerProp.add(mesh(new THREE.BoxGeometry(0.9, 0.8, 0.9), 0x8c7a66, 0, 0.4, 0));
+  const blockColors = [0x4c7bf4, 0xf08a4b, 0x3fa97c, 0xd565b0, 0xf2c94c];
+  const blocks: THREE.Mesh[] = [];
+  blockColors.forEach((c, i) => {
+    const w = 0.85 - i * 0.1;
+    const blk = mesh(new THREE.BoxGeometry(w, 0.2, w), c, (i % 2 ? 0.05 : -0.04), 0.9 + i * 0.21, 0);
+    towerProp.add(blk);
+    blocks.push(blk);
+  });
+  booth('TOWER', 0x0e8a66, towerProp, (t) => {
+    const top = blocks[blocks.length - 1];
+    top.position.x = Math.sin(t * 2.4) * 0.25;
   });
 
   return { group, booths, signs, boothGroups, board, bounds: { minX: -5.4, maxX: 5.4, minZ: -3.6, maxZ: 5.2 } };
