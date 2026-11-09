@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import type { Member, Position } from '../net/loungeSocket';
-import { createCharacter, type CharacterRig } from './characters3d';
+import { createCharacter, type CharacterRig, type Face } from './characters3d';
 import { chatBubble, disposeSprite, iconSprite, nameLabel } from './labels';
 import { blocked, buildLounge, type Lounge } from './lounge';
 
@@ -32,6 +32,8 @@ class Person {
   pumpLeft = 0;
   private soot?: THREE.Group;
   private rubber?: THREE.Group;
+  /** 판이 끝났을 때 당첨을 피함 → 웃는 얼굴 */
+  private happy = false;
 
   /** 서버가 알려 준 위치·방향·걷는 중 */
   readonly server = { x: 0, z: 0, f: 0.67, m: false, known: false };
@@ -47,6 +49,7 @@ class Person {
       this.group.add(this.rig.root);
       this.characterIndex = characterIndex;
       this.applyAway();
+      this.refreshFace();
       this.placeOverlays();
     }
     if (nickname !== this.nickname || !this.label) {
@@ -121,6 +124,7 @@ class Person {
         material.transparent = false;
       }
     });
+    this.refreshFace();
     if (this.away && !this.zz) {
       this.zz = iconSprite('💤', 0.6);
       this.group.add(this.zz);
@@ -153,9 +157,12 @@ class Person {
   setSoot(v: boolean) {
     if (v && !this.soot) {
       const g = new THREE.Group();
-      const blot = new THREE.Mesh(new THREE.SphereGeometry(0.43, 24, 18), new THREE.MeshBasicMaterial({ color: 0x2a2a2a, transparent: true, opacity: 0.55 }));
-      blot.scale.set(1.01, 0.95, 0.97);
-      g.add(blot);
+      if (!this.rig.setFace) {
+        // 표정을 못 바꾸는 모델이면 얼굴 위에 검은 막을 씌운다
+        const blot = new THREE.Mesh(new THREE.SphereGeometry(0.43, 24, 18), new THREE.MeshBasicMaterial({ color: 0x2a2a2a, transparent: true, opacity: 0.55 }));
+        blot.scale.set(1.01, 0.95, 0.97);
+        g.add(blot);
+      }
       const fuzz = new THREE.MeshStandardMaterial({ color: 0x3a3a3a, roughness: 1 });
       for (let k = 0; k < 7; k++) {
         const a = (k / 7) * Math.PI * 2;
@@ -170,6 +177,7 @@ class Person {
       this.rig.body.remove(this.soot);
       this.soot = undefined;
     }
+    this.refreshFace();
   }
 
   /** 풍선 당첨 연출: 머리에 고무 조각, 놀란 입 */
@@ -184,9 +192,11 @@ class Person {
         piece.rotation.set(Math.random(), a, Math.random());
         g.add(piece);
       }
-      const mouth = new THREE.Mesh(new THREE.SphereGeometry(0.05, 10, 8), new THREE.MeshBasicMaterial({ color: 0x5a2a2a }));
-      mouth.position.set(0, -0.13, 0.4);
-      g.add(mouth);
+      if (!this.rig.setFace) {
+        const mouth = new THREE.Mesh(new THREE.SphereGeometry(0.05, 10, 8), new THREE.MeshBasicMaterial({ color: 0x5a2a2a }));
+        mouth.position.set(0, -0.13, 0.4);
+        g.add(mouth);
+      }
       g.position.y = (this.rig.height ?? 1.55) - 0.47;
       this.rig.body.add(g);
       this.rubber = g;
@@ -194,6 +204,19 @@ class Person {
       this.rig.body.remove(this.rubber);
       this.rubber = undefined;
     }
+    this.refreshFace();
+  }
+
+  setHappy(v: boolean) {
+    if (v === this.happy) return;
+    this.happy = v;
+    this.refreshFace();
+  }
+
+  /** 당첨 연출 > 자리비움 > 웃음 > 기본 순으로 표정을 고른다 */
+  private refreshFace() {
+    const face: Face = this.soot ? 'soot' : this.rubber ? 'surprised' : this.away ? 'sleepy' : this.happy ? 'happy' : 'normal';
+    this.rig?.setFace?.(face);
   }
 
   get position() {
@@ -225,6 +248,7 @@ class Person {
     if (this.rig.armL) this.rig.armL.rotation.x = this.holding ? -2.7 : pumpArm ?? -swing * 0.8;
     if (this.rig.armR) this.rig.armR.rotation.x = this.holding ? -2.7 : pumpArm ?? swing * 0.8;
     this.rig.body.position.y = moving ? Math.abs(Math.sin(this.walkPhase)) * 0.08 : Math.sin(t * 2.2 + this.idlePhase) * 0.012;
+    this.rig.tick?.(dt);
     if (this.zz) this.zz.position.y = (this.rig.height ?? 1.55) + 0.05 + Math.sin(t * 2) * 0.06;
     if (this.bubble) {
       this.bubbleLeft -= dt;
@@ -271,7 +295,7 @@ export class LoungeView {
   private markerLeft = 0;
   private bombState: BombState | null = null;
   private voting = false;
-  private balloonState: { center: THREE.Vector3; count: number } | null = null;
+  private balloonState: { center: THREE.Vector3; count: number; order: string[] } | null = null;
   private readonly balloon: THREE.Group;
   private readonly balloonStand: THREE.Group;
   private readonly bits: { mesh: THREE.Mesh; v: THREE.Vector3; spin: THREE.Vector3; life: number }[] = [];
@@ -446,6 +470,7 @@ export class LoungeView {
   bombStart(order: string[], holder: string, centerX: number, centerZ: number) {
     this.voting = false;
     this.bombState = { order, holder: null, center: new THREE.Vector3(centerX, 0, centerZ), loser: null };
+    for (const p of this.people.values()) p.setHappy(false);
     this.bombHolder(holder);
     this.bomb.visible = true;
     const h = this.people.get(holder);
@@ -466,6 +491,7 @@ export class LoungeView {
     this.bombState.holder = null;
     for (const p of this.people.values()) p.setHolding(false);
     this.bomb.visible = false;
+    this.cheerSurvivors(this.bombState.order, loser);
     const victim = this.people.get(loser);
     if (victim) {
       victim.setSoot(true);
@@ -492,6 +518,7 @@ export class LoungeView {
     for (const p of this.people.values()) {
       p.setSoot(false);
       p.setRubber(false);
+      p.setHappy(false);
     }
   }
 
@@ -509,9 +536,10 @@ export class LoungeView {
 
   // ---------- 풍선 불기 ----------
 
-  balloonStart(count: number, centerX: number, centerZ: number) {
+  balloonStart(count: number, centerX: number, centerZ: number, order: string[] = []) {
     this.voting = false;
-    this.balloonState = { center: new THREE.Vector3(centerX, 0, centerZ), count };
+    this.balloonState = { center: new THREE.Vector3(centerX, 0, centerZ), count, order };
+    for (const p of this.people.values()) p.setHappy(false);
     this.balloonShown = this.balloonSize(count);
     this.balloonStand.position.set(centerX, 0, centerZ);
     this.balloon.position.set(centerX, 1.4, centerZ);
@@ -539,8 +567,14 @@ export class LoungeView {
       b.life = 1.2;
       (b.mesh.material as THREE.MeshBasicMaterial).opacity = 1;
     }
+    this.cheerSurvivors(this.balloonState.order, loser);
     this.people.get(loser)?.setRubber(true);
     if (!this.reduceMotion) this.shake = 0.3;
+  }
+
+  /** 이번 판에서 당첨을 피한 사람은 다음 판(또는 내기 끝)까지 웃는 얼굴 */
+  private cheerSurvivors(order: string[], loser: string) {
+    for (const id of order) if (id !== loser) this.people.get(id)?.setHappy(true);
   }
 
   /** 판 사이: 다음 판에서 새 풍선이 나온다 */
@@ -571,6 +605,7 @@ export class LoungeView {
     for (const p of this.people.values()) {
       p.setHolding(false);
       p.setSoot(false);
+      p.setHappy(false);
     }
     for (const g of this.lounge.boothGroups) g.visible = true;
     for (const s of this.lounge.signs) s.visible = this.mode === 'lobby';

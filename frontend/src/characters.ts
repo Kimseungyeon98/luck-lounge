@@ -1,4 +1,4 @@
-// 임시 캐릭터 10종 (사람 모양 도형). M6에서 실제 그림으로 교체한다.
+// 캐릭터 10종의 2D 아이콘 (입장 화면 목록, 통계 게시판). 3D 모델 v2 와 같은 얼굴·옷.
 // 서버는 0~9 번호만 저장하므로, 그림을 바꿔도 데이터는 그대로다.
 
 export const CHARACTER_COUNT = 10;
@@ -39,10 +39,12 @@ export function characterSvg(index: number, scale = 2): string {
     + '<rect x="20" y="66" width="6" height="10" rx="3" fill="#4A5878"/><rect x="30" y="66" width="6" height="10" rx="3" fill="#4A5878"/>'
     + '<ellipse cx="22" cy="78" rx="6" ry="3.5" fill="#fff" stroke="#D5DCE4"/><ellipse cx="34" cy="78" rx="6" ry="3.5" fill="#fff" stroke="#D5DCE4"/>'
     + `<path d="M16 68 Q16 50 28 50 Q40 50 40 68Z" fill="${top}"/>`
+    + '<path d="M26 53 L26 58 M30 53 L30 58" stroke="#fff" stroke-width="1.2" stroke-linecap="round"/>'
     + `<rect x="11" y="54" width="6" height="11" rx="3" fill="${top}" transform="rotate(20 14 54)"/><rect x="39" y="54" width="6" height="11" rx="3" fill="${top}" transform="rotate(-20 42 54)"/>`
     + `<ellipse cx="28" cy="30" rx="21" ry="20" fill="${skin}"/>`
-    + '<ellipse cx="21" cy="32" rx="3.4" ry="4.6" fill="#221C20"/><ellipse cx="35" cy="32" rx="3.4" ry="4.6" fill="#221C20"/>'
-    + '<circle cx="22.2" cy="30.2" r="1.2" fill="#fff"/><circle cx="36.2" cy="30.2" r="1.2" fill="#fff"/>'
+    + [21, 35].map((x) => `<ellipse cx="${x}" cy="31.5" rx="3.8" ry="5.2" fill="#2B2026"/>`
+      + `<ellipse cx="${x}" cy="33.8" rx="2.6" ry="1.8" fill="#6B4A5A"/>`
+      + `<circle cx="${x + 1.3}" cy="29.5" r="1.6" fill="#fff"/><circle cx="${x - 1.3}" cy="33.3" r=".7" fill="#fff"/>`).join('')
     + '<ellipse cx="15" cy="38" rx="3.5" ry="2" fill="#FF8A8A" opacity=".5"/><ellipse cx="41" cy="38" rx="3.5" ry="2" fill="#FF8A8A" opacity=".5"/>'
     + '<path d="M25.5 39 Q28 41.5 30.5 39" fill="none" stroke="#8A4A3A" stroke-width="1.4" stroke-linecap="round"/>'
     + hair(i, HAIRS[i]) + '</svg>';
@@ -50,16 +52,4 @@ export function characterSvg(index: number, scale = 2): string {
 
 export function characterDataUrl(index: number, scale = 2): string {
   return 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(characterSvg(index, scale));
-}
-
-/** Phaser 텍스처로 쓰기 위해 10종을 이미지로 미리 읽어 둔다. */
-export function loadCharacterImages(scale = 2): Promise<HTMLImageElement[]> {
-  return Promise.all(
-    Array.from({ length: CHARACTER_COUNT }, (_, i) => new Promise<HTMLImageElement>((resolve, reject) => {
-      const img = new Image();
-      img.onload = () => resolve(img);
-      img.onerror = reject;
-      img.src = characterDataUrl(i, scale);
-    })),
-  );
 }

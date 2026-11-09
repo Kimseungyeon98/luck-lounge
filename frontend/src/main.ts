@@ -125,7 +125,7 @@ async function boot() {
     },
     onBalloon: (b) => {
       if (b.type === 'start' && b.order && b.turn) {
-        view?.balloonStart(b.count ?? 0, b.centerX ?? 0, b.centerZ ?? 0);
+        view?.balloonStart(b.count ?? 0, b.centerX ?? 0, b.centerZ ?? 0, b.order);
         balloonHud.start(b.order, b.turn, b.count ?? 0, b.limitMin ?? 12, b.limitMax ?? 30, true);
       } else if (b.type === 'turn' && b.player) {
         balloonHud.turn(b.player);
