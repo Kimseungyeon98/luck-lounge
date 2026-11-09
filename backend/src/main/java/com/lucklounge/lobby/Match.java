@@ -3,6 +3,8 @@ package com.lucklounge.lobby;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.EnumMap;
+import java.util.Map;
 import java.util.List;
 import java.util.Random;
 import java.util.UUID;
@@ -10,7 +12,7 @@ import java.util.function.Function;
 import java.util.function.Predicate;
 
 /**
- * 하루 내기 한 번: 걸어서 투표 → (결과 발표) → 연속 판 → 요약.
+ * 하루 내기 한 번: 걸어서 투표 → (결과 발표) → 연속 판(복불복) 또는 한 판(경쟁) → 요약.
  * <ul>
  *   <li>투표: 10초. 끝날 때 부스 위 인원이 많은 게임, 동률이면 무작위</li>
  *   <li>부스 밖 사람은 투표만 기권하고 게임에는 참가 (자리비움·접속 끊김은 제외)</li>
@@ -25,10 +27,39 @@ final class Match {
     /** 폭발 후 다음 판까지 (결과 카드 + 3초 안내) */
     static final Duration BETWEEN_TIME = Duration.ofSeconds(4);
     static final Duration SUMMARY_TIME = Duration.ofSeconds(8);
+    /** 경쟁 게임 순위를 1등부터 한 명씩 발표하는 시간 (한 명당) */
+    static final Duration REVEAL_EACH = Duration.ofMillis(600);
 
     enum Phase { VOTING, ANNOUNCE, PLAYING, BETWEEN, SUMMARY }
 
-    enum Booth { BOMB, BALLOON }
+    /**
+     * 게임 부스. 왼쪽이 복불복 존, 오른쪽이 경쟁 존. 프론트엔드 lounge.ts 의 BOOTHS 와 같은 자리여야 한다.
+     * 이름이 곧 게임 종류(gameType)다.
+     */
+    enum Booth {
+        BOMB(-3.4, 0.7, false), BALLOON(-3.4, 3.7, false), STOP(3.4, 0.7, true), TOWER(3.4, 3.7, true);
+
+        static final double RADIUS = 1.45;
+
+        final double x;
+        final double z;
+        final boolean skill;
+
+        Booth(double x, double z, boolean skill) {
+            this.x = x;
+            this.z = z;
+            this.skill = skill;
+        }
+
+        static Booth at(double x, double z) {
+            for (Booth b : values()) {
+                if (Math.hypot(x - b.x, z - b.z) < RADIUS) {
+                    return b;
+                }
+            }
+            return null;
+        }
+    }
 
     record Winner(UUID playerId, int round, long heldMs) {
     }
@@ -40,8 +71,12 @@ final class Match {
     record VoteStarted(long endsInMs, int winnersTarget, boolean practice) implements Event {
     }
 
-    record VoteEnded(int bomb, int balloon, int abstain, Booth won, String gameType, List<UUID> participants,
+    record VoteEnded(Map<Booth, Integer> votes, int abstain, Booth won, String gameType, List<UUID> participants,
                      int winnersTarget, boolean practice, Instant at) implements Event {
+
+        int votes(Booth b) {
+            return votes.getOrDefault(b, 0);
+        }
     }
 
     record Cancelled(String reason) implements Event {
@@ -122,24 +157,27 @@ final class Match {
                     events.add(new Finished(now));
                     return events;
                 }
-                int bombVotes = 0;
-                int balloonVotes = 0;
+                Map<Booth, Integer> votes = new EnumMap<>(Booth.class);
+                for (Booth b : Booth.values()) {
+                    votes.put(b, 0);
+                }
+                int voted = 0;
                 for (UUID id : eligible) {
                     Booth b = boothOf.apply(id);
-                    if (b == Booth.BOMB) {
-                        bombVotes++;
-                    } else if (b == Booth.BALLOON) {
-                        balloonVotes++;
+                    if (b != null) {
+                        votes.merge(b, 1, Integer::sum);
+                        voted++;
                     }
                 }
-                Booth won = bombVotes == balloonVotes
-                        ? (random.nextBoolean() ? Booth.BOMB : Booth.BALLOON)
-                        : (bombVotes > balloonVotes ? Booth.BOMB : Booth.BALLOON);
+                // 가장 많은 부스. 동률이면 그 부스들 중 무작위 (아무도 안 섰으면 네 부스 중 무작위)
+                int top = votes.values().stream().max(Integer::compare).orElse(0);
+                List<Booth> tied = votes.entrySet().stream().filter(e -> e.getValue() == top).map(Map.Entry::getKey).toList();
+                Booth won = tied.get(random.nextInt(tied.size()));
                 remaining = List.copyOf(eligible);
                 participantCount = remaining.size();
                 winnersTarget = Math.max(1, Math.min(requestedWinners, participantCount - 1));
-                gameType = won == Booth.BALLOON ? "BALLOON" : "BOMB";
-                events.add(new VoteEnded(bombVotes, balloonVotes, participantCount - bombVotes - balloonVotes, won,
+                gameType = won.name();
+                events.add(new VoteEnded(votes, participantCount - voted, won,
                         gameType, remaining, winnersTarget, practice, now));
                 phase = Phase.ANNOUNCE;
                 phaseEndsAt = now.plus(ANNOUNCE_TIME);
@@ -157,7 +195,22 @@ final class Match {
                     events.add(new GameEvent(e));
                 }
                 PartyGame.Outcome outcome = game.outcome();
-                if (outcome != null) {
+                if (outcome != null && game instanceof SkillGame skill) {
+                    // 경쟁 게임은 한 번에 끝: 아래에서부터 당첨자 수만큼
+                    List<UUID> players = game.order();
+                    List<UUID> worst = skill.worstFirst();
+                    for (int i = 0; i < winnersTarget && i < worst.size(); i++) {
+                        UUID loser = worst.get(i);
+                        winners.add(new Winner(loser, i + 1, 0));
+                        events.add(new RoundEnded(i + 1, gameType, new PartyGame.Outcome(loser, 0, null, null, outcome.at()),
+                                players, players.size(), false));
+                    }
+                    phase = Phase.SUMMARY;
+                    phaseEndsAt = outcome.at().plus(REVEAL_EACH.multipliedBy(players.size())).plus(Duration.ofMillis(2500))
+                            .plus(SUMMARY_TIME);
+                    events.add(new Summary(gameType, List.copyOf(winners), participantCount, practice));
+                    game = null;
+                } else if (outcome != null) {
                     List<UUID> players = game.order();
                     winners.add(new Winner(outcome.loser(), round, outcome.heldMs()));
                     remaining = remaining.stream().filter(id -> !id.equals(outcome.loser())).toList();
@@ -195,7 +248,11 @@ final class Match {
             return;
         }
         round++;
-        game = "BALLOON".equals(gameType) ? BalloonGame.start(remaining, now, random) : BombGame.start(remaining, now, random);
+        game = switch (gameType) {
+            case "BALLOON" -> BalloonGame.start(remaining, now, random);
+            case "STOP", "TOWER" -> SkillGame.start(gameType, remaining, now, random);
+            default -> BombGame.start(remaining, now, random);
+        };
         place.accept(game.order());
         phase = Phase.PLAYING;
         events.add(new RoundStarted(round, gameType, game.startedEvent(LobbyRoom.BOMB_CENTER_X, LobbyRoom.BOMB_CENTER_Z)));

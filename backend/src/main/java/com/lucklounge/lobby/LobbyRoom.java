@@ -70,8 +70,8 @@ public class LobbyRoom {
     public enum StartFailure { NOT_HOST, ALREADY_RUNNING, NOT_ENOUGH_PLAYERS }
 
     /** 시한폭탄 판이 둥글게 서는 자리의 중심 (테이블·부스와 겹치지 않는 곳) */
-    static final double BOMB_CENTER_X = 0.6;
-    static final double BOMB_CENTER_Z = 0.9;
+    static final double BOMB_CENTER_X = 0.0;
+    static final double BOMB_CENTER_Z = 1.4;
 
     private final String teamSlug;
     private final Map<UUID, Member> members = new LinkedHashMap<>();
@@ -248,11 +248,6 @@ public class LobbyRoom {
 
     // ---------- 내기 (투표 → 연속 판) ----------
 
-    /** 부스 위치. 프론트엔드 lounge.ts 의 부스와 같은 자리 */
-    static final double BOOTH_RADIUS = 1.45;
-    static final double BOMB_BOOTH_X = -3.0;
-    static final double BALLOON_BOOTH_X = 3.0;
-    static final double BOOTH_Z = 2.6;
 
     /** 방장이 게임 고르기를 시작. 10초 투표 후 진행된다. */
     public synchronized Object startMatch(UUID by, int winnersTarget, boolean practice, Instant now) {
@@ -291,6 +286,24 @@ public class LobbyRoom {
         return balloon.pump(playerId, pumps, now);
     }
 
+    /** 경쟁 게임 점수 제출. 진행 소식은 다음 틱에 방송된다. */
+    public synchronized SkillGame.SubmitResult submitSkill(UUID playerId, double score, Double extra, Instant now) {
+        if (match == null || !(match.game() instanceof SkillGame skill)) {
+            return SkillGame.SubmitResult.LATE;
+        }
+        return skill.submit(playerId, score, extra, now);
+    }
+
+    /** 혼자 연습: 그 게임 부스 위에 서 있고, 내기가 진행 중이 아닐 때만 */
+    public synchronized boolean canPractice(UUID playerId, String gameType) {
+        Member m = onlineMember(playerId);
+        if (m == null || match != null || !SkillGame.isSkill(gameType)) {
+            return false;
+        }
+        Match.Booth b = Match.Booth.at(m.x, m.z);
+        return b != null && b.name().equals(gameType);
+    }
+
     /** 진행 중인 판 (늦게 들어온 사람, 재접속한 사람에게 다시 알려 줄 때) */
     public synchronized Optional<Match.RoundStarted> roundInProgress() {
         return match == null ? Optional.empty() : Optional.ofNullable(match.currentRound());
@@ -323,13 +336,7 @@ public class LobbyRoom {
         if (m == null) {
             return null;
         }
-        if (Math.hypot(m.x - BOMB_BOOTH_X, m.z - BOOTH_Z) < BOOTH_RADIUS) {
-            return Match.Booth.BOMB;
-        }
-        if (Math.hypot(m.x - BALLOON_BOOTH_X, m.z - BOOTH_Z) < BOOTH_RADIUS) {
-            return Match.Booth.BALLOON;
-        }
-        return null;
+        return Match.Booth.at(m.x, m.z);
     }
 
     /** 당첨자는 원 밖으로 걸어 나간다 */

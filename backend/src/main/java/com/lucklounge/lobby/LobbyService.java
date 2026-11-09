@@ -231,8 +231,9 @@ public class LobbyService implements SmartLifecycle {
         switch (e) {
             case Match.VoteStarted v -> matchMessage(team, voteMessage(v));
             case Match.VoteEnded v -> {
-                Map<String, Object> m = msg("voteResult", "bomb", v.bomb());
-                m.put("balloon", v.balloon());
+                Map<String, Integer> votes = new LinkedHashMap<>();
+                v.votes().forEach((b, n) -> votes.put(b.name(), n));
+                Map<String, Object> m = msg("voteResult", "votes", votes);
                 m.put("abstain", v.abstain());
                 m.put("won", v.won().name());
                 m.put("gameType", v.gameType());
@@ -240,7 +241,7 @@ public class LobbyService implements SmartLifecycle {
                 m.put("participants", v.participants().size());
                 matchMessage(team, m);
                 recordWriter.execute(() -> safely(() -> openSessions.put(team, records.startSession(team, v.gameType(),
-                        v.winnersTarget(), v.practice(), v.bomb(), v.balloon(), v.at()))));
+                        v.winnersTarget(), v.practice(), votes, v.at()))));
             }
             case Match.Cancelled c -> matchMessage(team, msg("cancel", "message", c.reason()));
             case Match.RoundStarted r -> {
@@ -314,13 +315,94 @@ public class LobbyService implements SmartLifecycle {
         }
     }
 
-    /** 판 안의 소식: 시한폭탄은 /bomb, 풍선은 /balloon */
+    /** 판 안의 소식: 시한폭탄은 /bomb, 풍선은 /balloon, 경쟁 게임은 /skill */
     private void gameEvent(String team, PartyGame.GameEvent e) {
         if (e instanceof BombGame.Event b) {
             bombEvent(team, b);
         } else if (e instanceof BalloonGame.Event b) {
             messaging.convertAndSend("/topic/t/" + team + "/balloon", (Object) balloonMessage(b));
+        } else if (e instanceof SkillGame.Event k) {
+            messaging.convertAndSend("/topic/t/" + team + "/skill", (Object) skillMessage(k));
+            if (k instanceof SkillGame.Result r) {
+                saveSkillResult(team, r);
+            }
         }
+    }
+
+    private Map<String, Object> skillMessage(SkillGame.Event e) {
+        return switch (e) {
+            case SkillGame.Started s -> {
+                // 휴대폰 시계와 서버 시계가 달라도 되게, 지금부터 몇 ms 뒤인지로 보낸다
+                long elapsed = java.time.Duration.between(s.startedAt(), clock.instant()).toMillis();
+                Map<String, Object> m = msg("start", "gameType", s.gameType());
+                m.put("startsInMs", s.countdownMs() - elapsed);
+                m.put("playMs", s.playMs());
+                m.put("players", s.players());
+                m.put("lowerBetter", s.lowerBetter());
+                yield m;
+            }
+            case SkillGame.Progress p -> {
+                Map<String, Object> m = msg("progress", "done", p.done());
+                m.put("total", p.total());
+                yield m;
+            }
+            case SkillGame.Result r -> {
+                Map<String, Object> m = msg("result", "gameType", r.gameType());
+                m.put("lowerBetter", r.lowerBetter());
+                m.put("ranking", r.ranking());
+                yield m;
+            }
+        };
+    }
+
+    private void saveSkillResult(String team, SkillGame.Result r) {
+        List<GameRecords.SkillScore> scores = r.ranking().stream().filter(en -> en.score() != null)
+                .map(en -> new GameRecords.SkillScore(en.player(), en.score(), en.extra())).toList();
+        recordWriter.execute(() -> safely(() -> {
+            Long session = openSessions.get(team);
+            if (session != null) {
+                records.saveSkillScores(team, session, r.gameType(), scores, r.at());
+            }
+        }));
+    }
+
+    public void submitSkill(LoungePrincipal p, double score, Double extra) {
+        switch (room(p.teamSlug()).submitSkill(p.playerId(), score, extra, clock.instant())) {
+            case LATE -> notice(p, "error", "시간이 지나서 기록되지 않았어요.");
+            case INVALID -> notice(p, "error", "점수를 확인할 수 없어 기록되지 않았어요.");
+            default -> { }
+        }
+    }
+
+    /** 혼자 연습: 부스 위에서만. 저장한 뒤 내 최고 기록과 팀 최고 기록을 나에게만 알려 준다. */
+    public void practice(LoungePrincipal p, String gameType, double score, Double extra) {
+        if (gameType == null || !room(p.teamSlug()).canPractice(p.playerId(), gameType)) {
+            notice(p, "error", "경쟁 존의 그 게임 부스 위에서 연습할 수 있어요.");
+            return;
+        }
+        SkillGame.Kind kind = SkillGame.Kind.of(gameType);
+        if (!kind.valid(score, extra)) {
+            notice(p, "error", "점수를 확인할 수 없어 기록되지 않았어요.");
+            return;
+        }
+        Instant at = clock.instant();
+        recordWriter.execute(() -> safely(() -> {
+            GameRecords.Bests before = records.bests(p.teamSlug(), gameType, kind.lowerBetter, p.playerId());
+            records.saveSkillScores(p.teamSlug(), null, gameType, List.of(new GameRecords.SkillScore(p.playerId(), score, extra)), at);
+            GameRecords.Bests after = records.bests(p.teamSlug(), gameType, kind.lowerBetter, p.playerId());
+            Map<String, Object> m = msg("practice", "gameType", gameType);
+            m.put("score", score);
+            m.put("myBest", after.mine());
+            m.put("teamBest", after.team());
+            m.put("newMyBest", before.mine() == null || !sameRecord(before.mine(), after.mine()));
+            m.put("newTeamBest", before.team() == null || !sameRecord(before.team(), after.team()));
+            messaging.convertAndSendToUser(p.getName(), "/queue/me", (Object) m);
+        }));
+    }
+
+    private static boolean sameRecord(GameRecords.Best a, GameRecords.Best b) {
+        return b != null && a.playerId().equals(b.playerId()) && a.score() == b.score()
+                && java.util.Objects.equals(a.extra(), b.extra());
     }
 
     private static Map<String, Object> balloonMessage(BalloonGame.Event e) {

@@ -49,7 +49,7 @@ class GameRecordsTest {
         // 한국 시간 11월 7일 아침 8시 50분 = UTC 11월 6일 23시 50분
         Instant at = Instant.parse("2026-11-06T23:50:00Z");
 
-        long session = records.startSession(slug, "BOMB", 2, false, 2, 1, at);
+        long session = records.startSession(slug, "BOMB", 2, false, java.util.Map.of("BOMB", 2, "BALLOON", 1), at);
         records.saveRound(session, 1, park, 1200, null, null, at.plusSeconds(30), List.of(kim, park, lee));
         records.saveRound(session, 2, lee, 0, 19, 18, at.plusSeconds(60), List.of(kim, lee));
         records.endSession(session, at.plusSeconds(70));

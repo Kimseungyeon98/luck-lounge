@@ -59,7 +59,7 @@ class StatsServiceTest {
     }
 
     void play(Instant at, boolean practice, UUID loser, List<UUID> players) {
-        long s = records.startSession(slug, "BOMB", 1, practice, 1, 0, at);
+        long s = records.startSession(slug, "BOMB", 1, practice, java.util.Map.of("BOMB", 1), at);
         records.saveRound(s, 1, loser, 1000, null, null, at.plusSeconds(30), players);
         records.endSession(s, at.plusSeconds(40));
     }
@@ -91,5 +91,25 @@ class StatsServiceTest {
         assertThat(stats.stats(slug, "this").rows().getFirst().nickname()).isEqualTo("박과장");
         assertThat(stats.stats(slug, "all").totalWins()).isEqualTo(2);
         assertThat(stats.stats(slug, "all").rows()).allSatisfy(r -> assertThat(r.days()).isEqualTo(2));
+    }
+
+    @Test
+    void 경쟁_게임_최고_기록은_팀_1등과_내_기록() {
+        Instant at = thisMonth(1);
+        records.saveSkillScores(slug, null, "STOP", List.of(new GameRecords.SkillScore(kim, 120, null),
+                new GameRecords.SkillScore(park, 35, null)), at);
+        records.saveSkillScores(slug, null, "STOP", List.of(new GameRecords.SkillScore(kim, 80, null)), at.plusSeconds(60));
+        records.saveSkillScores(slug, null, "TOWER", List.of(new GameRecords.SkillScore(kim, 12, 0.2),
+                new GameRecords.SkillScore(lee, 12, 0.6)), at);
+
+        List<StatsService.GameBest> bests = stats.bests(slug, kim);
+        StatsService.GameBest stop = bests.getFirst();
+        assertThat(stop.gameType()).isEqualTo("STOP");
+        assertThat(stop.team().nickname()).isEqualTo("박과장");
+        assertThat(stop.mine().score()).isEqualTo(80);
+        StatsService.GameBest tower = bests.get(1);
+        assertThat(tower.team().nickname()).isEqualTo("이팀장");
+        assertThat(tower.mine().extra()).isEqualTo(0.2);
+        assertThat(stats.bests(slug, null).getFirst().mine()).isNull();
     }
 }

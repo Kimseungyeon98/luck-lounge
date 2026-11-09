@@ -156,15 +156,16 @@ class LobbyRoomTest {
         r.join("s1", kim, "김대리", 0);
         r.join("s2", park, "박과장", 1);
         r.join("s3", lee, "이팀장", 2);
-        standAt(r, kim, -3.0, 3.6);   // 시한폭탄 부스 (받침 앞쪽)
-        standAt(r, park, -2.0, 2.6);  // 시한폭탄 부스 가장자리
+        standAt(r, kim, -3.4, 1.6);   // 시한폭탄 부스 (받침 앞쪽)
+        standAt(r, park, -2.3, 0.9);  // 시한폭탄 부스 가장자리
         standAt(r, lee, 0.0, 0.0);    // 부스 밖 → 기권
         r.startMatch(kim, 1, false, t0);
 
         List<Match.Event> events = run(r, 1, 10);
         Match.VoteEnded vote = (Match.VoteEnded) events.stream().filter(e -> e instanceof Match.VoteEnded).findFirst().orElseThrow();
-        assertThat(vote.bomb()).isEqualTo(2);
-        assertThat(vote.balloon()).isZero();
+        assertThat(vote.votes(Match.Booth.BOMB)).isEqualTo(2);
+        assertThat(vote.votes(Match.Booth.BALLOON)).isZero();
+        assertThat(vote.votes(Match.Booth.STOP)).isZero();
         assertThat(vote.abstain()).isEqualTo(1);
         assertThat(vote.won()).isEqualTo(Match.Booth.BOMB);
         assertThat(vote.participants()).containsExactlyInAnyOrder(kim, park, lee);
@@ -174,7 +175,7 @@ class LobbyRoomTest {
     void 풍선이_이기면_풍선_불기로_진행한다() {
         room.join("s1", kim, "김대리", 0);
         room.join("s2", park, "박과장", 1);
-        standAt(room, kim, 3.0, 3.6);
+        standAt(room, kim, -3.4, 4.6);
         room.startMatch(kim, 1, false, t0);
         List<Match.Event> events = run(room, 1, 20);
         Match.VoteEnded vote = (Match.VoteEnded) events.stream().filter(e -> e instanceof Match.VoteEnded).findFirst().orElseThrow();
@@ -189,7 +190,7 @@ class LobbyRoomTest {
         room.join("s1", kim, "김대리", 0);
         room.join("s2", park, "박과장", 1);
         room.join("s3", lee, "이팀장", 2);
-        standAt(room, kim, -2.0, 2.6);  // 시한폭탄 한 표 (투표 없으면 무작위라 풍선이 될 수 있음)
+        standAt(room, kim, -2.3, 0.9);  // 시한폭탄 한 표 (투표 없으면 무작위라 풍선이 될 수 있음)
         room.startMatch(kim, 2, false, t0);
         List<Match.Event> events = run(room, 1, 200);
 
@@ -239,7 +240,7 @@ class LobbyRoomTest {
         room.join("s1", kim, "김대리", 0);
         room.join("s2", park, "박과장", 1);
         room.join("s3", lee, "이팀장", 2);
-        standAt(room, kim, 3.0, 3.6);
+        standAt(room, kim, -3.4, 4.6);
         room.startMatch(kim, 2, false, t0);
         // 아무도 펌프질하지 않아도 7초마다 1번 자동이므로 한계(최대 30)를 넘겨 끝난다
         List<Match.Event> events = run(room, 1, 600);
@@ -250,5 +251,43 @@ class LobbyRoomTest {
             assertThat(r.outcome().pumpCount()).isEqualTo(r.outcome().pumpLimit() + 1);
         });
         assertThat(events.getLast()).isInstanceOf(Match.Finished.class);
+    }
+
+    @Test
+    void 경쟁_게임은_한_판으로_끝나고_아래에서부터_당첨자_수만큼() {
+        room.join("s1", kim, "김대리", 0);
+        room.join("s2", park, "박과장", 1);
+        room.join("s3", lee, "이팀장", 2);
+        standAt(room, kim, 3.4, 1.6);   // 10초 멈추기 부스
+        room.startMatch(kim, 2, false, t0);
+        List<Match.Event> events = run(room, 1, 14);
+        Match.VoteEnded vote = (Match.VoteEnded) events.stream().filter(e -> e instanceof Match.VoteEnded).findFirst().orElseThrow();
+        assertThat(vote.won()).isEqualTo(Match.Booth.STOP);
+        assertThat(events).anyMatch(e -> e instanceof Match.RoundStarted r && r.start() instanceof SkillGame.Started);
+
+        Instant play = t0.plusSeconds(17);
+        assertThat(room.submitSkill(kim, 30, null, play)).isEqualTo(SkillGame.SubmitResult.OK);
+        assertThat(room.submitSkill(park, 400, null, play)).isEqualTo(SkillGame.SubmitResult.OK);
+        assertThat(room.submitSkill(lee, 90, null, play)).isEqualTo(SkillGame.SubmitResult.OK);
+        List<Match.Event> end = room.tick(0.1, play).matchEvents();
+
+        assertThat(end).filteredOn(e -> e instanceof Match.RoundEnded).extracting(e -> ((Match.RoundEnded) e).outcome().loser())
+                .containsExactly(park, lee);
+        Match.Summary summary = (Match.Summary) end.stream().filter(e -> e instanceof Match.Summary).findFirst().orElseThrow();
+        assertThat(summary.gameType()).isEqualTo("STOP");
+        assertThat(summary.winners()).extracting(Match.Winner::playerId).containsExactly(park, lee);
+    }
+
+    @Test
+    void 연습은_그_게임_부스_위에서_내기가_없을_때만() {
+        room.join("s1", kim, "김대리", 0);
+        room.join("s2", park, "박과장", 1);
+        assertThat(room.canPractice(kim, "TOWER")).isFalse();
+        standAt(room, kim, 3.4, 4.6);   // 탑 쌓기 부스
+        assertThat(room.canPractice(kim, "TOWER")).isTrue();
+        assertThat(room.canPractice(kim, "STOP")).isFalse();
+        assertThat(room.canPractice(kim, "BOMB")).isFalse();
+        room.startMatch(kim, 1, false, t0);
+        assertThat(room.canPractice(kim, "TOWER")).isFalse();
     }
 }

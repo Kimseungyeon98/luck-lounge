@@ -7,6 +7,8 @@ import { createBombHud } from './bombHud';
 import { createMatchHud } from './matchHud';
 import { createBalloonHud } from './balloonHud';
 import { createStatsSheet } from './statsSheet';
+import { createSkillHud } from './skillHud';
+import { boothAt } from './three/lounge';
 import { connectLounge } from './net/loungeSocket';
 import { unlockAudio } from './sound';
 import { clearToken } from './storage';
@@ -78,6 +80,10 @@ async function boot() {
   const statsSheet = createStatsSheet(app, team.slug, team.name, me.playerId);
   const balloonHud = createBalloonHud(app, me.playerId, nameOf, (n) => socket?.pump(n));
   const matchHud = createMatchHud(app, view, team.name, me.playerId, nameOf, hud.toast, () => statsSheet.open());
+  const skillHud = createSkillHud(app, me.playerId, nameOf, {
+    submit: (score, extra) => socket?.skillScore(score, extra),
+    practice: (type, score, extra) => socket?.practice(type, score, extra),
+  });
 
   socket = connectLounge(team.slug, me.token, {
     onPresence: (p) => {
@@ -85,7 +91,15 @@ async function boot() {
       view?.setPresence(p.players, p.hostId);
       hud.setPresence(p.players, p.hostId);
     },
-    onPositions: (list) => view?.setPositions(list),
+    onPositions: (list) => {
+      view?.setPositions(list);
+      // 경쟁 존 부스 위에 서 있으면 연습하기 버튼
+      const mine = list.find((p) => p.id === me.playerId);
+      if (mine) {
+        const b = boothAt(mine.x, mine.z);
+        skillHud.setBooth(b === 'STOP' || b === 'TOWER' ? b : null);
+      }
+    },
     onEvent: (e) => {
       if (e.type === 'chat') view?.say(e.playerId, e.text, false);
       else if (e.type === 'emote') view?.say(e.playerId, e.text, true);
@@ -107,8 +121,9 @@ async function boot() {
       }
     },
     onMatch: (m) => {
-      matchHud.handle(m, (running) => hud.setGameRunning(running));
-      if (m.type === 'roundEnd') {
+      matchHud.handle(m, (running) => { hud.setGameRunning(running); skillHud.setRunning(running); });
+      if (m.type === 'voteResult') skillHud.setWinnersTarget(m.winnersTarget ?? 1);
+      if (m.type === 'roundEnd' && m.gameType !== 'STOP' && m.gameType !== 'TOWER') {
         if (m.gameType === 'BALLOON') {
           balloonHud.roundEnd(2800);
           window.setTimeout(() => view?.balloonRoundEnd(), 300);
@@ -120,8 +135,14 @@ async function boot() {
       if (m.type === 'finish') {
         bombHud.finish();
         balloonHud.finish();
+        skillHud.finish();
         view?.bombFinish();
       }
+    },
+    onSkill: (k) => {
+      if (k.type === 'start') skillHud.start(k);
+      else if (k.type === 'progress') skillHud.progress(k);
+      else if (k.type === 'result') skillHud.result(k);
     },
     onBalloon: (b) => {
       if (b.type === 'start' && b.order && b.turn) {
@@ -140,7 +161,8 @@ async function boot() {
     onNotice: (n) => {
       if (n.type === 'too-early') bombHud.tooEarly();
       else if (n.type === 'not-your-turn') balloonHud.notYourTurn();
-      else hud.toast(n.message);
+      else if (n.type === 'practice') skillHud.practiceResult(n);
+      else if (n.message) hud.toast(n.message);
     },
     onState: (state) => {
       hud.setState(state);

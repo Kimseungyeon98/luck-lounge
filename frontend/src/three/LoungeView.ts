@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import type { Member, Position } from '../net/loungeSocket';
 import { createCharacter, type CharacterRig, type Face } from './characters3d';
 import { chatBubble, disposeSprite, iconSprite, nameLabel } from './labels';
-import { blocked, buildLounge, type Lounge } from './lounge';
+import { blocked, boothAt, buildLounge, type GameType, type Lounge } from './lounge';
 
 type Mode = 'preview' | 'lobby';
 
@@ -523,16 +523,16 @@ export class LoungeView {
   }
 
   /** 지금 부스 위에 서 있는 인원 (화면 표시용. 실제 집계는 서버가 한다) */
-  voteCounts(): { bomb: number; balloon: number; abstain: number } {
-    const c = { bomb: 0, balloon: 0, abstain: 0 };
+  voteCounts(): Record<GameType, number> & { abstain: number } {
+    const c = { BOMB: 0, BALLOON: 0, STOP: 0, TOWER: 0, abstain: 0 };
     for (const p of this.people.values()) {
-      const pos = p.position;
-      if (Math.hypot(pos.x + 3.0, pos.z - 2.6) < 1.45) c.bomb++;
-      else if (Math.hypot(pos.x - 3.0, pos.z - 2.6) < 1.45) c.balloon++;
+      const b = boothAt(p.position.x, p.position.z);
+      if (b) c[b]++;
       else c.abstain++;
     }
     return c;
   }
+
 
   // ---------- 풍선 불기 ----------
 
