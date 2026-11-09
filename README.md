@@ -29,14 +29,16 @@ Caddy ── Spring Boot 4 (Java 25) ── PostgreSQL
 
 - 서버 한 대, 팀마다 방 하나. 게임 상태는 메모리, 결과만 DB에 저장
 - 프론트엔드는 빌드해서 jar 안의 정적 파일로 들어감 → 배포 파일은 jar 하나
-- 운영: Oracle Cloud Always Free VM + Docker Compose + DuckDNS (운영비 0원)
+- 운영: Railway 무료 요금제 (App Sleeping, 월 $1 크레딧 안에서 0원). Oracle Cloud Always Free VM 구성도 `deploy/`에 남아 있음
 
 | 경로 | 내용 |
 |---|---|
 | `backend/` | Spring Boot. `team`, `player`, `lobby`(위치·말풍선·방장·투표·시한폭탄), `record`(내기 기록) 패키지 |
 | `frontend/` | Three.js + Vite. 3D 라운지 위에 입장 카드(DOM)와 대기실 표시줄 |
 | `deploy/` | Dockerfile, docker-compose, Caddyfile, 팀 링크·백업 스크립트 |
-| `docs/oracle-setup.md` | 무료 서버 준비 안내 |
+| `Dockerfile` | Railway 배포용 이미지 (프론트 + 백엔드를 한 번에 빌드) |
+| `docs/railway-setup.md` | Railway 무료 배포 안내 |
+| `docs/oracle-setup.md` | Oracle 무료 VM 배포 안내 (대안) |
 
 ## 로컬에서 실행
 
@@ -75,5 +77,7 @@ LUCKLOUNGE_TEST_EXTERNAL_DB=true SPRING_DATASOURCE_URL=jdbc:postgresql://localho
 
 ## 배포
 
-`main`에 머지하면 GitHub Actions가 테스트 → 빌드 → Oracle VM 배포까지 합니다.
-처음 한 번은 [docs/oracle-setup.md](docs/oracle-setup.md) 대로 서버를 준비해 주세요.
+**Railway (지금 쓰는 방식):** `main`에 머지하면 Railway가 저장소의 `Dockerfile`로 직접 빌드해 배포합니다.
+처음 한 번은 [docs/railway-setup.md](docs/railway-setup.md) 대로 준비해 주세요. 테스트는 GitHub Actions(CI)가 PR마다 돌립니다.
+
+**Oracle VM (대안):** VM Secrets를 등록하면 GitHub Actions가 테스트 → 빌드 → VM 배포까지 합니다. [docs/oracle-setup.md](docs/oracle-setup.md) 참고.

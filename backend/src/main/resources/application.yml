@@ -5,6 +5,14 @@ spring:
     url: ${DB_URL:jdbc:postgresql://localhost:5432/lucklounge}
     username: ${DB_USER:lucklounge}
     password: ${DB_PASSWORD:lucklounge}
+    hikari:
+      # 아무도 없을 때는 DB 연결을 모두 닫는다. 연결이 남아 있으면 Railway 가 서버를 재우지 못한다(App Sleeping).
+      minimum-idle: 0
+      maximum-pool-size: 5
+      idle-timeout: 60000
+      keepalive-time: 0
+      # 잠들어 있던 DB 가 깨어나는 시간까지 기다린다
+      connection-timeout: 60000
   jpa:
     open-in-view: false
     hibernate:
@@ -14,6 +22,8 @@ spring:
       enabled: true
 
 server:
+  # Railway 는 PORT 환경 변수로 포트를 알려 준다. 없으면 8080
+  port: ${PORT:8080}
   forward-headers-strategy: framework
   shutdown: graceful
 

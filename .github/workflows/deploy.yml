@@ -1,6 +1,6 @@
 name: Deploy
 
-# main 에 머지되면 테스트 → jar 빌드 → Oracle VM 에 올리고 재시작.
+# main 에 머지되면 테스트 → jar 빌드 → Oracle VM 에 올리고 재시작. (Railway 는 이 워크플로가 아니라 Railway 가 직접 배포)
 # 필요한 저장소 Secrets: VM_HOST, VM_USER, VM_SSH_KEY (docs/oracle-setup.md 참고)
 on:
   push:
@@ -35,7 +35,7 @@ jobs:
           VM_SSH_KEY: ${{ secrets.VM_SSH_KEY }}
         run: |
           if [ -z "$VM_HOST" ]; then
-            echo "::notice::VM_HOST secret 이 없어 배포를 건너뜁니다. docs/oracle-setup.md 를 참고해 등록해 주세요."
+            echo "::notice::VM_HOST secret 이 없어 Oracle VM 배포를 건너뜁니다. Railway 를 쓰면 Railway 가 main 을 따로 배포합니다 (docs/railway-setup.md)."
             exit 0
           fi
           mkdir -p ~/.ssh
