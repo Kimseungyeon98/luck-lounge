@@ -30,7 +30,7 @@ export function createSkillHud(root: HTMLElement, myId: string, nameOf: (id: str
   const layer = h('div', { className: 'skill-layer', hidden: true, role: 'dialog', ariaModal: 'true' }, [
     h('div', { className: 'skill-head' }, [title, sub]), stage,
   ]);
-  root.append(practiceBtn, layer);
+  root.append(layer);
 
   let play: SkillPlay | null = null;
   let timers: number[] = [];
@@ -63,9 +63,9 @@ export function createSkillHud(root: HTMLElement, myId: string, nameOf: (id: str
   };
 
   /** 3, 2, 1 을 보여 준 뒤 시작 */
-  const countdown = (ms: number, then: () => void) => {
+  const countdown = (ms: number, then: () => void, ruleText = '') => {
     const big = h('div', { className: 'skill-count' });
-    stage.replaceChildren(big);
+    stage.replaceChildren(h('div', { className: 'skill-ready' }, [big, ...(ruleText ? [h('p', { className: 'skill-rule' }, [ruleText])] : [])]));
     const endAt = performance.now() + ms;
     let shown = -1;
     const step = () => {
@@ -111,7 +111,7 @@ export function createSkillHud(root: HTMLElement, myId: string, nameOf: (id: str
           practiceTimer = window.setTimeout(() => showPracticeResult(type, score, null), 4000);
         }, 900);
       });
-    });
+    }, SKILL_HOW[type]);
   };
 
   const showPracticeResult = (type: SkillType, score: number | null, n: Notice | null) => {
@@ -182,7 +182,7 @@ export function createSkillHud(root: HTMLElement, myId: string, nameOf: (id: str
         // 남은 플레이 시간이 지나면 끝 (탑 쌓기는 지금까지 쌓은 층으로)
         later(() => play?.forceEnd(), Math.max(0, playMs + Math.min(0, startsIn)));
       };
-      if (startsIn > 0) countdown(startsIn, begin);
+      if (startsIn > 0) countdown(startsIn, begin, SKILL_HOW[matchType]);
       else begin();
     },
 
@@ -227,5 +227,7 @@ export function createSkillHud(root: HTMLElement, myId: string, nameOf: (id: str
       if (!practiceType) close();
       submitted = false;
     },
+    /** 대기실 아래쪽 줄에 넣을 연습하기 버튼 */
+    practiceButton: practiceBtn,
   };
 }
