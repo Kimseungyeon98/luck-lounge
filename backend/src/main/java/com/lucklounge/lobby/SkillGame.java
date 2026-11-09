@@ -13,7 +13,7 @@ import java.util.UUID;
 import java.util.function.Predicate;
 
 /**
- * 경쟁 존 게임 (10초 멈추기, 탑 쌓기). 모두 동시에 각자 휴대폰에서 한 판만 하고, 점수 순위로 당첨자를 정한다.
+ * 경쟁 존 게임 (10초 멈추기, 탑 쌓기, 과녁 멈추기). 모두 동시에 각자 휴대폰에서 한 판만 하고, 점수 순위로 당첨자를 정한다.
  * <ul>
  *   <li>3초 카운트다운 뒤 플레이 시간이 열린다. 점수는 휴대폰이 재서 보낸다 (인터넷 속도와 무관)</li>
  *   <li>접속 중인 참가자가 모두 내거나 시간이 다 되면 끝. 못 낸 사람은 맨 아래</li>
@@ -31,7 +31,9 @@ final class SkillGame implements PartyGame {
         /** 점수 = 10초와의 차이(ms) */
         STOP(Duration.ofSeconds(25), true, 60_000),
         /** 점수 = 쌓은 층 수, extra = 마지막 블록 폭(0~1) */
-        TOWER(Duration.ofSeconds(60), false, 500);
+        TOWER(Duration.ofSeconds(60), false, 500),
+        /** 점수 = 바늘과 가운데의 평균 거리(%, 3번) */
+        TARGET(Duration.ofSeconds(25), true, 100);
 
         final Duration playTime;
         final boolean lowerBetter;
@@ -117,7 +119,7 @@ final class SkillGame implements PartyGame {
     }
 
     static boolean isSkill(String type) {
-        return "STOP".equals(type) || "TOWER".equals(type);
+        return "STOP".equals(type) || "TOWER".equals(type) || "TARGET".equals(type);
     }
 
     @Override

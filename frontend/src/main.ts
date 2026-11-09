@@ -8,6 +8,7 @@ import { createMatchHud } from './matchHud';
 import { createBalloonHud } from './balloonHud';
 import { createStatsSheet } from './statsSheet';
 import { createSkillHud } from './skillHud';
+import { createLadderHud } from './ladderHud';
 import { formatScore } from './skill/games';
 import { closeSheet } from './sheets';
 import { boothAt } from './three/lounge';
@@ -89,6 +90,7 @@ async function boot() {
     practice: (type, score, extra) => socket?.practice(type, score, extra),
   });
   hud.slot.append(skillHud.practiceButton);
+  const ladderHud = createLadderHud(app, me.playerId, nameOf, (c) => socket?.pickLadder(c));
 
   socket = connectLounge(team.slug, me.token, {
     onPresence: (p) => {
@@ -105,7 +107,7 @@ async function boot() {
       const mine = list.find((p) => p.id === me.playerId);
       if (mine) {
         const b = boothAt(mine.x, mine.z);
-        skillHud.setBooth(b === 'STOP' || b === 'TOWER' ? b : null);
+        skillHud.setBooth(b === 'STOP' || b === 'TOWER' || b === 'TARGET' ? b : null);
       }
     },
     onEvent: (e) => {
@@ -132,7 +134,8 @@ async function boot() {
       if (m.type === 'vote') closeSheet();
       matchHud.handle(m, (running) => { hud.setGameRunning(running); skillHud.setRunning(running); });
       if (m.type === 'voteResult') skillHud.setWinnersTarget(m.winnersTarget ?? 1);
-      if (m.type === 'roundEnd' && m.gameType !== 'STOP' && m.gameType !== 'TOWER') {
+      if (m.type === 'roundEnd' && m.gameType === 'LADDER') ladderHud.roundEnd();
+      else if (m.type === 'roundEnd' && m.gameType !== 'STOP' && m.gameType !== 'TOWER' && m.gameType !== 'TARGET') {
         if (m.gameType === 'BALLOON') {
           balloonHud.roundEnd(2800);
           window.setTimeout(() => view?.balloonRoundEnd(), 300);
@@ -145,9 +148,11 @@ async function boot() {
         bombHud.finish();
         balloonHud.finish();
         skillHud.finish();
+        ladderHud.finish();
         view?.bombFinish();
       }
     },
+    onLadder: (l) => ladderHud.handle(l),
     onSkill: (k) => {
       if (k.type === 'start') skillHud.start(k);
       else if (k.type === 'progress') skillHud.progress(k);
@@ -175,6 +180,7 @@ async function boot() {
       if (n.type === 'too-early') bombHud.tooEarly();
       else if (n.type === 'not-your-turn') balloonHud.notYourTurn();
       else if (n.type === 'practice') skillHud.practiceResult(n);
+      else if (n.type === 'ladder-taken') ladderHud.taken();
       else if (n.message) hud.toast(n.message);
     },
     onState: (state) => {

@@ -10,15 +10,17 @@ export interface SkillPlay {
 /** 끝나면 점수를 알려 준다. 시간 안에 못 끝내면 score 가 null */
 export type OnDone = (score: number | null, extra: number | null) => void;
 
-export const SKILL_NAME: Record<SkillType, string> = { STOP: '10초 멈추기', TOWER: '탑 쌓기' };
+export const SKILL_NAME: Record<SkillType, string> = { STOP: '10초 멈추기', TOWER: '탑 쌓기', TARGET: '과녁 멈추기' };
 export const SKILL_HOW: Record<SkillType, string> = {
   STOP: '3초가 지나면 시계가 사라져요. 딱 10.00초에 멈추세요',
   TOWER: '움직이는 블록을 눌러 쌓으세요. 삐져나온 부분은 잘려요',
+  TARGET: '좌우로 움직이는 바늘을 가운데에 멈추세요. 3번, 갈수록 빨라져요',
 };
 
 /** 점수 표시: 10초 멈추기는 10초와의 차이, 탑 쌓기는 층 수 */
 export function formatScore(type: SkillType, score: number | null | undefined): string {
   if (score == null) return '기록 없음';
+  if (type === 'TARGET') return `${score.toFixed(1)}%`;
   return type === 'STOP' ? `±${(score / 1000).toFixed(2)}초` : `${score}층`;
 }
 
@@ -30,6 +32,7 @@ function el<K extends keyof HTMLElementTagNameMap>(tag: K, className = '', text?
 }
 
 export function startSkill(type: SkillType, stage: HTMLElement, onDone: OnDone): SkillPlay {
+  if (type === 'TARGET') return playTarget(stage, onDone);
   return type === 'STOP' ? playStop(stage, onDone) : playTower(stage, onDone);
 }
 
@@ -224,6 +227,121 @@ function playTower(stage: HTMLElement, onDone: OnDone): SkillPlay {
   return {
     /** 시간이 다 되면 지금까지 쌓은 층으로 끝낸다 */
     forceEnd() { finish(true); },
+    destroy() {
+      over = true;
+      cancelAnimationFrame(raf);
+      window.removeEventListener('resize', size);
+    },
+  };
+}
+
+/* ---------- 과녁 멈추기 ---------- */
+
+/**
+ * 좌우로 움직이는 바늘을 가운데에 멈추기 3번. 한 번 멈출 때마다 1.35배 빨라진다.
+ * 점수 = 가운데와의 평균 거리 (막대 반쪽 길이를 100% 로)
+ */
+function playTarget(stage: HTMLElement, onDone: OnDone): SkillPlay {
+  const canvas = el('canvas', 'skill-canvas');
+  canvas.tabIndex = 0;
+  canvas.setAttribute('role', 'button');
+  canvas.setAttribute('aria-label', '과녁 멈추기. 누르면 바늘이 멈춥니다');
+  const hud = el('div', 'tower-hud');
+  const tryEl = el('div', 'skill-big', '1 / 3');
+  const msg = el('div', 'skill-note', '눌러서 멈추기');
+  hud.append(tryEl, msg);
+  const box = el('div', 'skill-tower');
+  box.append(canvas, hud);
+  stage.replaceChildren(box);
+  canvas.focus({ preventScroll: true });
+
+  const ctx = canvas.getContext('2d')!;
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  let W = 0;
+  let H = 0;
+  const size = () => {
+    W = box.clientWidth;
+    H = box.clientHeight;
+    canvas.width = W * dpr;
+    canvas.height = H * dpr;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  };
+  size();
+  const barL = () => W * 0.08;
+  const barW = () => W * 0.84;
+  let x = 0;
+  let dir = 1;
+  let speed = 0.9;
+  let stopped = false;
+  let over = false;
+  const tries: { x: number; d: number }[] = [];
+  let raf = 0;
+  let last = performance.now();
+
+  const draw = () => {
+    const y = H * 0.5;
+    const l = barL();
+    const w = barW();
+    const mid = l + w / 2;
+    ctx.fillStyle = '#F2EEE8';
+    ctx.fillRect(0, 0, W, H);
+    const g = ctx.createLinearGradient(l, 0, l + w, 0);
+    g.addColorStop(0, '#F8D7D5'); g.addColorStop(0.42, '#FFF2DA'); g.addColorStop(0.5, '#DDF3EB'); g.addColorStop(0.58, '#FFF2DA'); g.addColorStop(1, '#F8D7D5');
+    ctx.fillStyle = g;
+    ctx.fillRect(l, y - 30, w, 60);
+    ctx.fillStyle = '#12A37A';
+    ctx.fillRect(mid - 3, y - 40, 6, 80);
+    for (const t of tries) { ctx.fillStyle = 'rgba(24,32,43,0.35)'; ctx.fillRect(l + t.x * w - 2, y - 34, 4, 68); }
+    const nx = l + x * w;
+    ctx.fillStyle = '#18202B';
+    ctx.beginPath(); ctx.moveTo(nx, y - 46); ctx.lineTo(nx - 10, y - 64); ctx.lineTo(nx + 10, y - 64); ctx.closePath(); ctx.fill();
+    ctx.fillRect(nx - 2, y - 46, 4, 92);
+  };
+  const frame = (now: number) => {
+    const dt = Math.min(0.05, (now - last) / 1000);
+    last = now;
+    if (!stopped) {
+      x += dir * speed * dt;
+      if (x < 0) { x = 0; dir = 1; }
+      if (x > 1) { x = 1; dir = -1; }
+    }
+    draw();
+    raf = requestAnimationFrame(frame);
+  };
+  raf = requestAnimationFrame(frame);
+
+  const hit = () => {
+    if (stopped || over) return;
+    stopped = true;
+    const d = Math.abs(x - 0.5) * 200;
+    tries.push({ x, d });
+    msg.textContent = d < 3 ? '정중앙!' : `가운데에서 ${d.toFixed(1)}%`;
+    sfx.pass();
+    if (tries.length < 3) {
+      window.setTimeout(() => {
+        if (over) return;
+        stopped = false;
+        speed *= 1.35;
+        tryEl.textContent = `${tries.length + 1} / 3`;
+        msg.textContent = '더 빨라져요';
+      }, 700);
+    } else {
+      over = true;
+      const avg = Math.round((tries.reduce((a, t) => a + t.d, 0) / 3) * 10) / 10;
+      onDone(avg, null);
+    }
+  };
+  canvas.addEventListener('pointerdown', (e) => { e.preventDefault(); hit(); });
+  canvas.addEventListener('keydown', (e) => { if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); hit(); } });
+  window.addEventListener('resize', size);
+
+  return {
+    /** 시간이 다 되면 기록 없음 (3번을 다 못 멈춘 것) */
+    forceEnd() {
+      if (over) return;
+      over = true;
+      onDone(null, null);
+    },
     destroy() {
       over = true;
       cancelAnimationFrame(raf);

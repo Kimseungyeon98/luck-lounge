@@ -134,11 +134,13 @@ export function showLobbyHud(root: HTMLElement, team: Team, myId: string, action
   const helpSheet = h('div', { className: 'sheet', hidden: true, role: 'dialog', ariaLabel: '도움말' }, [
     h('h2', {}, ['도움말']),
     h('div', { className: 'help-zone luck' }, [h('b', {}, ['복불복 존 · 운으로']),
+      rule('사다리 타기', '10초 안에 줄 하나를 고르면 사다리를 따라 내려가요. ☕ 칸에 닿은 사람이 당첨'),
       rule('시한폭탄', '1~5초 안에 넘기다가, 터질 때 들고 있으면 당첨'),
       rule('풍선 불기', '차례대로 1~3번 펌프질, 풍선을 터뜨리면 당첨')]),
     h('div', { className: 'help-zone skill' }, [h('b', {}, ['경쟁 존 · 실력으로']),
       rule('10초 멈추기', '3초 뒤 사라지는 시계를 딱 10.00초에 멈추기. 가장 먼 사람이 당첨'),
       rule('탑 쌓기', '움직이는 블록을 눌러 쌓기. 가장 낮게 쌓은 사람이 당첨'),
+      rule('과녁 멈추기', '좌우로 움직이는 바늘을 가운데에 3번 멈추기. 평균 거리가 가장 먼 사람이 당첨'),
       h('p', { className: 'sheet-note' }, ['경쟁 존 부스 위에 서면 혼자 연습할 수 있어요.'])]),
     h('p', { className: 'sheet-note' }, ['방장이 게임을 시작하면 10초 동안 하고 싶은 게임 부스 위에 서세요. 가장 많이 선 게임을 해요.']),
     h('button', { type: 'button', className: 'sheet-close guide-again' }, ['처음 안내 다시 보기']),

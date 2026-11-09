@@ -92,4 +92,15 @@ class SkillGameTest {
         g.advanceTo(play, id -> !id.equals(c));
         assertThat(g.outcome().loser()).isEqualTo(c);
     }
+
+    @Test
+    void 과녁_멈추기는_평균_거리가_작은_사람이_위() {
+        SkillGame g = game("TARGET");
+        assertThat(g.submit(a, 101, null, play)).isEqualTo(SubmitResult.INVALID);
+        g.submit(a, 12.5, null, play);
+        g.submit(b, 3.2, null, play);
+        g.submit(c, 40, null, play);
+        g.advanceTo(play, SkillGameTest::always);
+        assertThat(g.result().ranking()).extracting(SkillGame.Entry::player).containsExactly(b, a, c);
+    }
 }

@@ -27,15 +27,15 @@ public class GameRecords {
         this.jdbc = jdbc;
     }
 
-    /** @param votes 부스 이름(BOMB, BALLOON, STOP, TOWER) → 그 부스에 선 사람 수 */
+    /** @param votes 부스 이름(LADDER, BOMB, BALLOON, TARGET, STOP, TOWER) → 그 부스에 선 사람 수 */
     @Transactional
     public long startSession(String teamSlug, String gameType, int winnersTarget, boolean practice,
                              Map<String, Integer> votes, Instant startedAt) {
         GeneratedKeyHolder keys = new GeneratedKeyHolder();
         jdbc.sql("""
                         insert into game_session (team_id, play_date, game_type, winners_target, practice,
-                                                  vote_bomb, vote_balloon, vote_stop, vote_tower, started_at)
-                        select id, :date, :type, :target, :practice, :bomb, :balloon, :stop, :tower, :at
+                                                  vote_bomb, vote_balloon, vote_stop, vote_tower, vote_ladder, vote_target, started_at)
+                        select id, :date, :type, :target, :practice, :bomb, :balloon, :stop, :tower, :ladder, :targetVotes, :at
                         from team where slug = :slug
                         """)
                 .param("date", LocalDate.ofInstant(startedAt, KOREA))
@@ -46,6 +46,8 @@ public class GameRecords {
                 .param("balloon", votes.getOrDefault("BALLOON", 0))
                 .param("stop", votes.getOrDefault("STOP", 0))
                 .param("tower", votes.getOrDefault("TOWER", 0))
+                .param("ladder", votes.getOrDefault("LADDER", 0))
+                .param("targetVotes", votes.getOrDefault("TARGET", 0))
                 .param("at", Timestamp.from(startedAt))
                 .param("slug", teamSlug)
                 .update(keys, "id");

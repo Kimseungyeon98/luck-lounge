@@ -98,7 +98,7 @@ class LobbyRoomTest {
         double startX = room.positions().getFirst().x();
         room.steer(kim, 1, 0);
         room.tick(0.5, t0);
-        assertThat(room.positions().getFirst().x()).isCloseTo(startX + 1.2, org.assertj.core.data.Offset.offset(0.01));
+        assertThat(room.positions().getFirst().x()).isCloseTo(startX + LobbyRoom.SPEED * 0.5, org.assertj.core.data.Offset.offset(0.01));
         room.steer(kim, 0, 0);
         room.tick(0.1, t0);
         assertThat(room.positions().getFirst().m()).isFalse();
@@ -156,8 +156,8 @@ class LobbyRoomTest {
         r.join("s1", kim, "김대리", 0);
         r.join("s2", park, "박과장", 1);
         r.join("s3", lee, "이팀장", 2);
-        standAt(r, kim, -3.4, 1.6);   // 시한폭탄 부스 (받침 앞쪽)
-        standAt(r, park, -2.3, 0.9);  // 시한폭탄 부스 가장자리
+        standAt(r, kim, -4.8, 1.8);   // 시한폭탄 부스 (받침 앞쪽)
+        standAt(r, park, -3.5, 1.1);  // 시한폭탄 부스 가장자리
         standAt(r, lee, 0.0, 0.0);    // 부스 밖 → 기권
         r.startMatch(kim, 1, false, t0);
 
@@ -175,7 +175,7 @@ class LobbyRoomTest {
     void 풍선이_이기면_풍선_불기로_진행한다() {
         room.join("s1", kim, "김대리", 0);
         room.join("s2", park, "박과장", 1);
-        standAt(room, kim, -3.4, 4.6);
+        standAt(room, kim, -4.8, 4.8);
         room.startMatch(kim, 1, false, t0);
         List<Match.Event> events = run(room, 1, 20);
         Match.VoteEnded vote = (Match.VoteEnded) events.stream().filter(e -> e instanceof Match.VoteEnded).findFirst().orElseThrow();
@@ -190,7 +190,7 @@ class LobbyRoomTest {
         room.join("s1", kim, "김대리", 0);
         room.join("s2", park, "박과장", 1);
         room.join("s3", lee, "이팀장", 2);
-        standAt(room, kim, -2.3, 0.9);  // 시한폭탄 한 표 (투표 없으면 무작위라 풍선이 될 수 있음)
+        standAt(room, kim, -3.5, 1.1);  // 시한폭탄 한 표 (투표 없으면 무작위라 풍선이 될 수 있음)
         room.startMatch(kim, 2, false, t0);
         List<Match.Event> events = run(room, 1, 200);
 
@@ -240,7 +240,7 @@ class LobbyRoomTest {
         room.join("s1", kim, "김대리", 0);
         room.join("s2", park, "박과장", 1);
         room.join("s3", lee, "이팀장", 2);
-        standAt(room, kim, -3.4, 4.6);
+        standAt(room, kim, -4.8, 4.8);
         room.startMatch(kim, 2, false, t0);
         // 아무도 펌프질하지 않아도 7초마다 1번 자동이므로 한계(최대 30)를 넘겨 끝난다
         List<Match.Event> events = run(room, 1, 600);
@@ -258,7 +258,7 @@ class LobbyRoomTest {
         room.join("s1", kim, "김대리", 0);
         room.join("s2", park, "박과장", 1);
         room.join("s3", lee, "이팀장", 2);
-        standAt(room, kim, 3.4, 1.6);   // 10초 멈추기 부스
+        standAt(room, kim, 4.8, 1.8);   // 10초 멈추기 부스
         room.startMatch(kim, 2, false, t0);
         List<Match.Event> events = run(room, 1, 14);
         Match.VoteEnded vote = (Match.VoteEnded) events.stream().filter(e -> e instanceof Match.VoteEnded).findFirst().orElseThrow();
@@ -283,11 +283,30 @@ class LobbyRoomTest {
         room.join("s1", kim, "김대리", 0);
         room.join("s2", park, "박과장", 1);
         assertThat(room.canPractice(kim, "TOWER")).isFalse();
-        standAt(room, kim, 3.4, 4.6);   // 탑 쌓기 부스
+        standAt(room, kim, 4.8, 4.8);   // 탑 쌓기 부스
         assertThat(room.canPractice(kim, "TOWER")).isTrue();
         assertThat(room.canPractice(kim, "STOP")).isFalse();
         assertThat(room.canPractice(kim, "BOMB")).isFalse();
         room.startMatch(kim, 1, false, t0);
         assertThat(room.canPractice(kim, "TOWER")).isFalse();
+    }
+
+    @Test
+    void 사다리_타기는_모두_고르면_공개하고_따라_내려간_시간_뒤에_판이_끝난다() {
+        room.join("s1", kim, "김대리", 0);
+        room.join("s2", park, "박과장", 1);
+        standAt(room, kim, -4.8, -1.2);   // 사다리 타기 부스
+        room.startMatch(kim, 1, false, t0);
+        List<Match.Event> events = run(room, 1, 14);
+        assertThat(events).anyMatch(e -> e instanceof Match.RoundStarted r && r.start() instanceof LadderGame.Started);
+        Instant pickAt = t0.plusSeconds(14);
+        assertThat(room.pickLadder(kim, 0, pickAt)).isEqualTo(LadderGame.PickResult.PICKED);
+        assertThat(room.pickLadder(park, 0, pickAt)).isEqualTo(LadderGame.PickResult.TAKEN);
+        assertThat(room.pickLadder(park, 1, pickAt)).isEqualTo(LadderGame.PickResult.PICKED);
+        List<Match.Event> reveal = room.tick(0.1, pickAt).matchEvents();
+        assertThat(reveal).anyMatch(e -> e instanceof Match.GameEvent g && g.event() instanceof LadderGame.Revealed);
+        assertThat(reveal).noneMatch(e -> e instanceof Match.RoundEnded);
+        List<Match.Event> end = room.tick(0.1, pickAt.plusMillis(4600)).matchEvents();
+        assertThat(end).anyMatch(e -> e instanceof Match.RoundEnded);
     }
 }

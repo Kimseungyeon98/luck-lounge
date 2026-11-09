@@ -6,16 +6,17 @@ package com.lucklounge.lobby;
  */
 public final class Obstacles {
 
-    public static final double MIN_X = -5.4;
-    public static final double MAX_X = 5.4;
+    public static final double MIN_X = -7.0;
+    public static final double MAX_X = 7.0;
     public static final double MIN_Z = -3.6;
     public static final double MAX_Z = 5.2;
 
-    /** {x, z, 반지름}: 테이블, 화분 4개, 부스 받침 4개 (부스 가운데보다 0.2 뒤) */
+    /** {x, z, 반지름}: 테이블, 화분 4개, 부스 받침 6개 (부스 가운데보다 0.2 뒤) */
     private static final double[][] CIRCLES = {
             {-0.4, -2.4, 0.95},
-            {-5.2, -4.4, 0.6}, {5.1, -4.4, 0.6}, {-5.2, 4.7, 0.6}, {5.1, 4.7, 0.6},
-            {-3.4, 0.5, 0.75}, {-3.4, 3.5, 0.75}, {3.4, 0.5, 0.75}, {3.4, 3.5, 0.75},
+            {-7.0, -4.4, 0.6}, {6.9, -4.4, 0.6}, {-7.0, 4.7, 0.6}, {6.9, 4.7, 0.6},
+            {-4.8, -2.3, 0.75}, {-4.8, 0.7, 0.75}, {-4.8, 3.7, 0.75},
+            {4.8, -2.3, 0.75}, {4.8, 0.7, 0.75}, {4.8, 3.7, 0.75},
     };
 
     /** {minX, maxX, minZ, maxZ}: 소파 */

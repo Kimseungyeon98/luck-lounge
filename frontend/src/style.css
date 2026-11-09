@@ -477,3 +477,30 @@ input[type="text"]:focus { outline: none; border-color: var(--focus); box-shadow
 .skill-ready { margin: auto; display: flex; flex-direction: column; align-items: center; gap: 18px; text-align: center; }
 .skill-ready .skill-count { margin: 0; }
 .skill-rule { margin: 0; font-size: 18px; font-weight: 700; max-width: 300px; }
+
+/* ---------- M8: 부스 6개 투표, 내 표 규칙, 사다리 ---------- */
+.tally.two { flex-direction: column; gap: 4px; background: none; box-shadow: none; padding: 0; align-items: center; }
+.tally.two span { background: rgba(255, 255, 255, 0.96); border-radius: 999px; padding: 4px 12px; box-shadow: 0 3px 10px rgba(24, 32, 43, 0.12); border: 0; }
+.tally.two .luck { color: #2f6bff; }
+.tally.two .skill { color: #0e8a66; }
+.my-vote { display: flex; flex-direction: column; gap: 3px; }
+.my-vote b { font-size: 16px; }
+.my-vote span { font-size: 14px; font-weight: 600; opacity: 0.95; }
+.ladder-layer {
+  position: fixed; inset: 0; z-index: 30; background: #f2eee8; color: #18202b; display: flex; flex-direction: column;
+  padding: max(16px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right)) max(16px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
+  gap: 8px; touch-action: manipulation; user-select: none; -webkit-user-select: none;
+}
+.ladder-head { text-align: center; display: flex; flex-direction: column; gap: 2px; }
+.ladder-head h2 { margin: 0; font-family: var(--font-display); font-weight: 400; font-size: 24px; }
+.ladder-head p { margin: 0; font-size: 14px; color: #5a6472; min-height: 1.4em; }
+.ladder-stage { flex: 1; position: relative; min-height: 0; }
+.ladder-stage canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+.ladder-tops { position: absolute; left: 0; right: 0; top: 0; display: flex; justify-content: space-around; }
+.ladder-tops button {
+  width: 52px; height: 52px; border-radius: 50%; border: 3px solid var(--c); background: #ffffff; color: #18202b;
+  font: inherit; font-size: 15px; font-weight: 800; cursor: pointer; padding: 0;
+}
+.ladder-tops button.taken { background: var(--c); color: #ffffff; cursor: default; }
+.ladder-tops button.mine { box-shadow: 0 0 0 4px #ffffff, 0 0 0 7px var(--c); }
+.ladder-tops button:focus-visible { outline: 3px solid var(--focus); outline-offset: 4px; }

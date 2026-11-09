@@ -37,7 +37,8 @@ final class Match {
      * 이름이 곧 게임 종류(gameType)다.
      */
     enum Booth {
-        BOMB(-3.4, 0.7, false), BALLOON(-3.4, 3.7, false), STOP(3.4, 0.7, true), TOWER(3.4, 3.7, true);
+        LADDER(-4.8, -2.1, false), BOMB(-4.8, 0.9, false), BALLOON(-4.8, 3.9, false),
+        TARGET(4.8, -2.1, true), STOP(4.8, 0.9, true), TOWER(4.8, 3.9, true);
 
         static final double RADIUS = 1.45;
 
@@ -250,7 +251,8 @@ final class Match {
         round++;
         game = switch (gameType) {
             case "BALLOON" -> BalloonGame.start(remaining, now, random);
-            case "STOP", "TOWER" -> SkillGame.start(gameType, remaining, now, random);
+            case "LADDER" -> LadderGame.start(remaining, now, random);
+            case "STOP", "TOWER", "TARGET" -> SkillGame.start(gameType, remaining, now, random);
             default -> BombGame.start(remaining, now, random);
         };
         place.accept(game.order());
