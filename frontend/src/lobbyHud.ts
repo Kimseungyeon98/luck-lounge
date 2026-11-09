@@ -1,17 +1,19 @@
 import type { Team } from './api';
 import type { ConnectionState, Member } from './net/loungeSocket';
 import { setSoundEnabled, soundEnabled } from './sound';
+import { closeSheet, openSheet } from './sheets';
 
 export type MoveMode = 'tap' | 'stick';
 
-const MODE_KEY = 'luck-lounge:move-mode';
+// 기본은 조이스틱 (UX 개선 1단계 결정). 예전 키에는 자동으로 '탭'이 저장돼 있어 새 키를 쓴다
+const MODE_KEY = 'luck-lounge:move-mode-v2';
 const EMOTES = ['👋', '😂', '🔥'];
 
 export function loadMoveMode(): MoveMode {
   try {
-    return localStorage.getItem(MODE_KEY) === 'stick' ? 'stick' : 'tap';
+    return localStorage.getItem(MODE_KEY) === 'tap' ? 'tap' : 'stick';
   } catch {
-    return 'tap';
+    return 'stick';
   }
 }
 
@@ -44,12 +46,12 @@ export function showLobbyHud(root: HTMLElement, team: Team, myId: string, action
   let members: Member[] = [];
 
   const count = h('span');
-  const status = h('span', { className: 'hud-status', role: 'status', hidden: true });
   const hostBtn = h('button', { type: 'button', className: 'icon-btn', ariaLabel: '방장 메뉴', hidden: true }, ['👑']);
   const settingsBtn = h('button', { type: 'button', className: 'icon-btn', ariaLabel: '설정' }, ['⚙️']);
   const statsBtn = h('button', { type: 'button', className: 'icon-btn', ariaLabel: '통계' }, ['📊']);
   statsBtn.addEventListener('click', () => actions.onOpenStats());
   const toast = h('div', { className: 'hud-toast', role: 'status', hidden: true });
+  const conn = h('div', { className: 'conn-banner', role: 'status', hidden: true });
 
   const hint = h('p', { className: 'hud-hint' });
   const chatOpen = h('button', { type: 'button', className: 'pill wide' }, ['💬 말하기']);
@@ -101,7 +103,8 @@ export function showLobbyHud(root: HTMLElement, team: Team, myId: string, action
 
   const teamBox = h('div', { className: 'hud-team' }, [h('b', {}, [team.name]), count]);
   const hud = h('div', { className: 'hud' }, [
-    h('div', { className: 'hud-top' }, [teamBox, h('div', { className: 'hud-buttons' }, [status, hostBtn, statsBtn, settingsBtn])]),
+    h('div', { className: 'hud-top' }, [teamBox, h('div', { className: 'hud-buttons' }, [hostBtn, statsBtn, settingsBtn])]),
+    conn,
     toast,
     h('div', { className: 'hud-bottom' }, [hint, actionRow, chatBar]),
     settings,
@@ -110,13 +113,13 @@ export function showLobbyHud(root: HTMLElement, team: Team, myId: string, action
   root.replaceChildren(hud);
 
   // ---------- 동작 ----------
-  const setMode = (m: MoveMode) => {
+  const setMode = (m: MoveMode, save = true) => {
     moveMode = m;
     tapBtn.setAttribute('aria-pressed', String(m === 'tap'));
     stickBtn.setAttribute('aria-pressed', String(m === 'stick'));
     hint.textContent = m === 'tap' ? '바닥을 누르면 그쪽으로 걸어가요' : '화면을 누른 채 끌면 그 방향으로 걸어요';
     hint.hidden = false;
-    saveMoveMode(m);
+    if (save) saveMoveMode(m);
     actions.onMoveMode(m);
   };
   const setSound = (v: boolean) => {
@@ -140,16 +143,16 @@ export function showLobbyHud(root: HTMLElement, team: Team, myId: string, action
   minus.addEventListener('click', () => { winnersTarget--; renderWinners(); });
   plus.addEventListener('click', () => { winnersTarget++; renderWinners(); });
   startMatch.addEventListener('click', () => {
-    hostSheet.hidden = true;
+    closeSheet(hostSheet);
     actions.onStartMatch(winnersTarget, practice.checked);
   });
   tapBtn.addEventListener('click', () => setMode('tap'));
   stickBtn.addEventListener('click', () => setMode('stick'));
-  setMode(moveMode);
+  setMode(moveMode, false);
 
-  settingsBtn.addEventListener('click', () => { settings.hidden = false; });
+  settingsBtn.addEventListener('click', () => openSheet(settings));
   for (const sheet of [settings, hostSheet]) {
-    sheet.querySelector('.sheet-close')!.addEventListener('click', () => { sheet.hidden = true; });
+    sheet.querySelector('.sheet-close')!.addEventListener('click', () => closeSheet(sheet));
   }
 
   hostBtn.addEventListener('click', () => {
@@ -159,11 +162,11 @@ export function showLobbyHud(root: HTMLElement, team: Team, myId: string, action
     renderWinners();
     memberList.replaceChildren(...members.filter((m) => m.playerId !== myId).map((m) => {
       const b = h('button', { type: 'button' }, [m.nickname, h('span', {}, ['넘기기'])]);
-      b.addEventListener('click', () => { actions.onTransferHost(m.playerId); hostSheet.hidden = true; });
+      b.addEventListener('click', () => { actions.onTransferHost(m.playerId); closeSheet(hostSheet); });
       return b;
     }));
     if (memberList.childElementCount === 0) memberList.append(h('p', { className: 'sheet-note' }, ['넘겨받을 사람이 아직 없어요.']));
-    hostSheet.hidden = false;
+    openSheet(hostSheet);
   });
 
   const closeChatBar = () => {
@@ -196,11 +199,13 @@ export function showLobbyHud(root: HTMLElement, team: Team, myId: string, action
   };
 
   const labels: Record<ConnectionState, string> = {
-    connecting: '연결 중…',
+    connecting: '라운지에 연결하는 중…',
     online: '',
-    reconnecting: '다시 연결하는 중…',
-    rejected: '다시 입장해 주세요',
+    reconnecting: '연결이 끊겼어요 · 다시 연결하는 중…',
+    rejected: '입장 정보가 바뀌었어요 · 다시 입장해 주세요',
   };
+  let connTimer = 0;
+  let wasOffline = false;
 
   let hostId: string | null = null;
   return {
@@ -218,9 +223,26 @@ export function showLobbyHud(root: HTMLElement, team: Team, myId: string, action
       }
       if (onlineHost !== null) hostId = onlineHost;
     },
+    /** 연결 상태를 화면 위 띠로. 처음 연결은 0.8초 넘게 걸릴 때만, 다시 연결되면 2초 동안 알림 */
     setState(state: ConnectionState) {
-      status.textContent = labels[state];
-      status.hidden = state === 'online';
+      clearTimeout(connTimer);
+      if (state === 'online') {
+        if (wasOffline) {
+          conn.textContent = '다시 연결됐어요';
+          conn.className = 'conn-banner ok';
+          conn.hidden = false;
+          connTimer = window.setTimeout(() => { conn.hidden = true; }, 2000);
+        } else {
+          conn.hidden = true;
+        }
+        wasOffline = false;
+        return;
+      }
+      wasOffline = state !== 'connecting' || wasOffline;
+      conn.textContent = labels[state];
+      conn.className = 'conn-banner';
+      if (state === 'connecting') connTimer = window.setTimeout(() => { conn.hidden = false; wasOffline = true; }, 800);
+      else conn.hidden = false;
     },
     hideHint() {
       hint.hidden = true;

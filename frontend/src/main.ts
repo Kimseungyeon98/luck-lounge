@@ -8,6 +8,7 @@ import { createMatchHud } from './matchHud';
 import { createBalloonHud } from './balloonHud';
 import { createStatsSheet } from './statsSheet';
 import { createSkillHud } from './skillHud';
+import { closeSheet } from './sheets';
 import { boothAt } from './three/lounge';
 import { connectLounge } from './net/loungeSocket';
 import { unlockAudio } from './sound';
@@ -121,6 +122,7 @@ async function boot() {
       }
     },
     onMatch: (m) => {
+      if (m.type === 'vote') closeSheet();
       matchHud.handle(m, (running) => { hud.setGameRunning(running); skillHud.setRunning(running); });
       if (m.type === 'voteResult') skillHud.setWinnersTarget(m.winnersTarget ?? 1);
       if (m.type === 'roundEnd' && m.gameType !== 'STOP' && m.gameType !== 'TOWER') {
