@@ -28,8 +28,25 @@ export interface Notice {
   newMyBest?: boolean;
   newTeamBest?: boolean;
 }
-export type SkillType = 'STOP' | 'TOWER';
-export type GameType = 'BOMB' | 'BALLOON' | SkillType;
+export type SkillType = 'STOP' | 'TOWER' | 'TARGET';
+export type GameType = 'LADDER' | 'BOMB' | 'BALLOON' | SkillType;
+/** 사다리 타기. picks 의 키는 줄 번호(문자열) */
+export interface LadderMessage {
+  type: 'start' | 'pick' | 'reveal';
+  players?: string[];
+  columns?: number;
+  pickMs?: number;
+  picks?: Record<string, string>;
+  player?: string;
+  column?: number;
+  auto?: boolean;
+  rungs?: [number, number][];
+  rows?: number;
+  coffee?: number;
+  loser?: string;
+  loserStart?: number;
+  revealMs?: number;
+}
 export interface SkillEntry { player: string; score: number | null; extra: number | null }
 export interface SkillMessage {
   type: 'start' | 'progress' | 'result';
@@ -87,6 +104,7 @@ export interface LoungeSocketHandlers {
   onMatch(m: MatchMessage): void;
   onBalloon(m: BalloonMessage): void;
   onSkill(m: SkillMessage): void;
+  onLadder(m: LadderMessage): void;
   onState(state: ConnectionState): void;
 }
 
@@ -102,6 +120,7 @@ export interface LoungeSocket {
   pump(n: number): void;
   skillScore(score: number, extra: number | null): void;
   practice(gameType: SkillType, score: number, extra: number | null): void;
+  pickLadder(column: number): void;
   close(): void;
 }
 
@@ -134,6 +153,7 @@ export function connectLounge(slug: string, token: string, h: LoungeSocketHandle
     client.subscribe(`/topic/t/${slug}/match`, json<MatchMessage>(h.onMatch));
     client.subscribe(`/topic/t/${slug}/balloon`, json<BalloonMessage>(h.onBalloon));
     client.subscribe(`/topic/t/${slug}/skill`, json<SkillMessage>(h.onSkill));
+    client.subscribe(`/topic/t/${slug}/ladder`, json<LadderMessage>(h.onLadder));
     client.publish({ destination: `/app/t/${slug}/presence/sync`, body: '' });
   };
 
@@ -167,6 +187,7 @@ export function connectLounge(slug: string, token: string, h: LoungeSocketHandle
     pump: (n) => send('balloon/pump', { pumps: n }),
     skillScore: (score, extra) => send('skill/score', { score, extra }),
     practice: (gameType, score, extra) => send('skill/practice', { gameType, score, extra }),
+    pickLadder: (column) => send('ladder/pick', { column }),
     close: () => void client.deactivate(),
   };
 }

@@ -535,7 +535,7 @@ export class LoungeView {
   }
 
   voteCounts(): Record<GameType, number> & { abstain: number } {
-    const c = { BOMB: 0, BALLOON: 0, STOP: 0, TOWER: 0, abstain: 0 };
+    const c = { LADDER: 0, BOMB: 0, BALLOON: 0, TARGET: 0, STOP: 0, TOWER: 0, abstain: 0 };
     for (const p of this.people.values()) {
       const b = boothAt(p.position.x, p.position.z);
       if (b) c[b]++;
@@ -690,19 +690,21 @@ export class LoungeView {
         this.camGoal.set(mp.x, -0.35, mp.z);
       }
     } else if (this.voting) {
-      this.camGoal.set(0, 0.3, 2.3);
+      this.camGoal.set(-0.3, 0.3, 0.8);
     } else if (this.bombState || this.balloonState) {
       // 게임 중에는 둥글게 선 사람들 전체가 보이게
       const c = (this.bombState ?? this.balloonState)!.center;
       this.camGoal.set(c.x, 0.2, c.z + 0.3);
     } else {
-      this.camGoal.set(Math.max(-3.0, Math.min(2.6, mp.x - 0.5)), 0.3, Math.max(-3.2, Math.min(2.4, mp.z - 0.3)));
+      this.camGoal.set(Math.max(-4.4, Math.min(4.0, mp.x - 0.5)), 0.3, Math.max(-3.2, Math.min(2.4, mp.z - 0.3)));
     }
-    // 세로로 긴 휴대폰에서는 대기실을 조금 멀리서 (가로로 6.5m는 보이게, 부스 이름표가 잘리지 않게)
+    // 대기실은 넓게 (M8): 예전보다 가로로 약 1.4배. 세로로 긴 휴대폰은 가로 9m는 보이게
     const cw = this.container.clientWidth || 1;
     const ch = this.container.clientHeight || 1;
-    const lobbyZoom = Math.min(1.05, (this.viewHeight * (cw / ch > 1 ? 0.8 : 1) * (cw / ch)) / 6.5);
-    this.zoomGoal = this.mode === 'preview' ? previewZoom : this.voting ? 0.64 : this.bombState || this.balloonState ? 0.95 : lobbyZoom;
+    const lobbyZoom = Math.min(0.76, (this.viewHeight * (cw / ch > 1 ? 0.8 : 1) * (cw / ch)) / 9);
+    // 투표 중에는 부스 6개가 모두 보이게 (가로 약 14.5m)
+    const voteZoom = Math.min(0.55, (this.viewHeight * (cw / ch > 1 ? 0.8 : 1) * (cw / ch)) / 14.5);
+    this.zoomGoal = this.mode === 'preview' ? previewZoom : this.voting ? voteZoom : this.bombState || this.balloonState ? 0.95 : lobbyZoom;
     if (this.bombState?.holder) {
       const h = this.people.get(this.bombState.holder);
       if (h) {

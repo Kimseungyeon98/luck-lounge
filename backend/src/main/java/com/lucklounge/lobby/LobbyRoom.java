@@ -21,7 +21,8 @@ import java.util.UUID;
  */
 public class LobbyRoom {
 
-    public static final double SPEED = 2.4;
+    /** 걷는 속도 (초속 m). M8 에서 라운지를 넓히며 1.25배로 */
+    public static final double SPEED = 3.0;
     static final Duration HOST_GRACE = Duration.ofSeconds(10);
     static final Duration CHAT_INTERVAL = Duration.ofMillis(1000);
     static final double SPAWN_X = 0.0;
@@ -292,6 +293,14 @@ public class LobbyRoom {
             return SkillGame.SubmitResult.LATE;
         }
         return skill.submit(playerId, score, extra, now);
+    }
+
+    /** 사다리 타기: 줄 고르기. 소식은 다음 틱에 방송된다. */
+    public synchronized LadderGame.PickResult pickLadder(UUID playerId, int column, Instant now) {
+        if (match == null || !(match.game() instanceof LadderGame ladder)) {
+            return LadderGame.PickResult.OVER;
+        }
+        return ladder.pick(playerId, column, now);
     }
 
     /** 혼자 연습: 그 게임 부스 위에 서 있고, 내기가 진행 중이 아닐 때만 */

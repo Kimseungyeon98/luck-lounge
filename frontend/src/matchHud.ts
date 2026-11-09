@@ -2,6 +2,7 @@ import type { GameType, MatchMessage } from './net/loungeSocket';
 import { REVEAL_EACH_MS, REVEAL_TAIL_MS } from './skillHud';
 import { characterDataUrl } from './characters';
 import { sfx } from './sound';
+import { BOOTHS } from './three/lounge';
 import type { LoungeView } from './three/LoungeView';
 
 function h<K extends keyof HTMLElementTagNameMap>(tag: K, props: Record<string, unknown> = {}, children: (Node | string)[] = []): HTMLElementTagNameMap[K] {
@@ -15,15 +16,19 @@ function h<K extends keyof HTMLElementTagNameMap>(tag: K, props: Record<string, 
  * 시한폭탄 한 판 안의 표시는 bombHud 가 맡는다.
  */
 export function createMatchHud(root: HTMLElement, view: LoungeView | null, teamName: string, myId: string, nameOf: (id: string) => string, toast: (t: string) => void, openStats: () => void, charOf: (id: string) => number) {
-  const GAME_NAME: Record<GameType, string> = { BOMB: '시한폭탄', BALLOON: '풍선', STOP: '10초 멈추기', TOWER: '탑 쌓기' };
-  const GAMES: GameType[] = ['BOMB', 'BALLOON', 'STOP', 'TOWER'];
-  const isSkill = (g?: GameType) => g === 'STOP' || g === 'TOWER';
+  const GAME_NAME: Record<GameType, string> = { LADDER: '사다리 타기', BOMB: '시한폭탄', BALLOON: '풍선', TARGET: '과녁 멈추기', STOP: '10초 멈추기', TOWER: '탑 쌓기' };
+  const LUCK: GameType[] = ['LADDER', 'BOMB', 'BALLOON'];
+  const SKILL: GameType[] = ['TARGET', 'STOP', 'TOWER'];
+  const GAMES: GameType[] = [...LUCK, ...SKILL];
+  const RULE = Object.fromEntries(BOOTHS.map((b) => [b.id, b.rule])) as Record<GameType, string>;
+  const isSkill = (g?: GameType) => !!g && SKILL.includes(g);
   const count = h('div', { className: 'vote-count' });
-  const SHORT: Record<GameType, string> = { BOMB: '폭탄', BALLOON: '풍선', STOP: '10초', TOWER: '탑' };
-  const tGames = GAMES.map((g) => h('span', { className: `g-${g.toLowerCase()}` }));
-  const tNone = h('span', { className: 'n' });
+  const SHORT: Record<GameType, string> = { LADDER: '사다리', BOMB: '폭탄', BALLOON: '풍선', TARGET: '과녁', STOP: '10초', TOWER: '탑' };
+  // 부스 6개라 존마다 한 줄씩
+  const luckLine = h('span', { className: 'luck' });
+  const skillLine = h('span', { className: 'skill' });
   const voteBar = h('div', { className: 'vote-bar', hidden: true, role: 'status' }, [
-    h('p', { className: 'vote-title' }, ['원하는 게임 부스로 걸어가세요']), count, h('div', { className: 'tally' }, [...tGames, tNone]),
+    h('p', { className: 'vote-title' }, ['원하는 게임 부스로 걸어가세요']), count, h('div', { className: 'tally two' }, [luckLine, skillLine]),
   ]);
   const banner = h('div', { className: 'match-banner', hidden: true, role: 'status' });
   const sumList = h('ol', { className: 'sum-list' });
@@ -37,7 +42,10 @@ export function createMatchHud(root: HTMLElement, view: LoungeView | null, teamN
   ]);
   stats.addEventListener('click', () => { summary.hidden = true; openStats(); });
   // 투표 중 내가 어느 부스에 서 있는지
-  const myVote = h('div', { className: 'my-vote', hidden: true, role: 'status' });
+  // 투표 중 내가 선 부스의 이름과 규칙 (M8 결정 V1: 아래 카드만)
+  const myVoteTitle = h('b');
+  const myVoteRule = h('span');
+  const myVote = h('div', { className: 'my-vote', hidden: true, role: 'status' }, [myVoteTitle, myVoteRule]);
   root.append(voteBar, myVote, banner, summary);
 
   let voteTimer = 0;
@@ -110,12 +118,13 @@ export function createMatchHud(root: HTMLElement, view: LoungeView | null, teamN
             count.classList.toggle('last', left <= 3 && left > 0);
             if (left !== lastCount && left <= 3 && left > 0) sfx.tick();
             lastCount = left;
-            const c = view?.voteCounts() ?? { BOMB: 0, BALLOON: 0, STOP: 0, TOWER: 0, abstain: 0 };
-            GAMES.forEach((g, i) => { tGames[i].textContent = `${SHORT[g]} ${c[g]}`; });
+            const c = view?.voteCounts() ?? { LADDER: 0, BOMB: 0, BALLOON: 0, TARGET: 0, STOP: 0, TOWER: 0, abstain: 0 };
+            luckLine.textContent = `복불복 · ${LUCK.map((g) => `${SHORT[g]} ${c[g]}`).join(' · ')}`;
+            skillLine.textContent = `경쟁 · ${SKILL.map((g) => `${SHORT[g]} ${c[g]}`).join(' · ')} · 기권 ${c.abstain}`;
             const mine = view?.myBooth() ?? null;
-            myVote.textContent = mine ? `내 표: ${GAME_NAME[mine]}` : '부스 밖 · 투표는 기권, 게임엔 참가해요';
+            myVoteTitle.textContent = mine ? `내 표: ${GAME_NAME[mine]}` : '부스 밖 · 투표는 기권, 게임엔 참가해요';
+            myVoteRule.textContent = mine ? RULE[mine] : '하고 싶은 게임 부스 위에 서 보세요';
             myVote.classList.toggle('on', !!mine);
-            tNone.textContent = `기권 ${c.abstain}`;
           };
           render();
           clearInterval(voteTimer);
@@ -124,7 +133,7 @@ export function createMatchHud(root: HTMLElement, view: LoungeView | null, teamN
         }
         case 'voteResult': {
           stopVote();
-          const votes = m.votes ?? { BOMB: 0, BALLOON: 0, STOP: 0, TOWER: 0 };
+          const votes = { LADDER: 0, BOMB: 0, BALLOON: 0, TARGET: 0, STOP: 0, TOWER: 0, ...m.votes };
           const tally = [...GAMES.filter((g) => votes[g] > 0).map((g) => `${GAME_NAME[g]} ${votes[g]}`), `기권 ${m.abstain}`].join(' · ');
           const top = Math.max(...GAMES.map((g) => votes[g]));
           const tie = GAMES.filter((g) => votes[g] === top).length > 1;

@@ -98,6 +98,16 @@ class LobbyController {
         }
     }
 
+        record LadderCommand(Integer column) {
+    }
+
+    @MessageMapping("/t/{team}/ladder/pick")
+    void pickLadder(@Payload LadderCommand cmd, Principal principal) {
+        if (cmd.column() != null) {
+            lobby.pickLadder(me(principal), cmd.column());
+        }
+    }
+
         @MessageMapping("/t/{team}/bomb/pass")
     void passBomb(Principal principal) {
         lobby.passBomb(me(principal));

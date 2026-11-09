@@ -38,6 +38,7 @@ public class StatsService {
     static {
         SKILL_GAMES.put("STOP", true);
         SKILL_GAMES.put("TOWER", false);
+        SKILL_GAMES.put("TARGET", true);
     }
 
     private final JdbcClient jdbc;

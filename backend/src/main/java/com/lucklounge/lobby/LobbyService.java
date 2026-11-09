@@ -321,11 +321,48 @@ public class LobbyService implements SmartLifecycle {
             bombEvent(team, b);
         } else if (e instanceof BalloonGame.Event b) {
             messaging.convertAndSend("/topic/t/" + team + "/balloon", (Object) balloonMessage(b));
+        } else if (e instanceof LadderGame.Event l) {
+            messaging.convertAndSend("/topic/t/" + team + "/ladder", (Object) ladderMessage(l));
         } else if (e instanceof SkillGame.Event k) {
             messaging.convertAndSend("/topic/t/" + team + "/skill", (Object) skillMessage(k));
             if (k instanceof SkillGame.Result r) {
                 saveSkillResult(team, r);
             }
+        }
+    }
+
+    private static Map<String, Object> ladderMessage(LadderGame.Event e) {
+        return switch (e) {
+            case LadderGame.Started s -> {
+                Map<String, Object> m = msg("start", "players", s.players());
+                m.put("columns", s.columns());
+                m.put("pickMs", s.pickMs());
+                m.put("picks", s.picks());
+                yield m;
+            }
+            case LadderGame.Picked p -> {
+                Map<String, Object> m = msg("pick", "player", p.player());
+                m.put("column", p.column());
+                m.put("auto", p.auto());
+                yield m;
+            }
+            case LadderGame.Revealed r -> {
+                Map<String, Object> m = msg("reveal", "rungs", r.rungs());
+                m.put("rows", LadderGame.ROWS);
+                m.put("picks", r.picks());
+                m.put("coffee", r.coffeeColumn());
+                m.put("loser", r.loser());
+                m.put("loserStart", r.loserStart());
+                m.put("revealMs", LadderGame.REVEAL_TIME.toMillis());
+                yield m;
+            }
+        };
+    }
+
+    public void pickLadder(LoungePrincipal p, int column) {
+        switch (room(p.teamSlug()).pickLadder(p.playerId(), column, clock.instant())) {
+            case TAKEN -> notice(p, "ladder-taken", "다른 사람이 먼저 고른 줄이에요.");
+            default -> { }
         }
     }
 
