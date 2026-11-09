@@ -69,6 +69,7 @@ val npmBuild by tasks.registering(Exec::class) {
     workingDir(frontendDir)
     commandLine(npm, "run", "build")
     inputs.dir(frontendDir.dir("src"))
+    inputs.dir(frontendDir.dir("public"))
     inputs.files(
         frontendDir.file("index.html"),
         frontendDir.file("package.json"),

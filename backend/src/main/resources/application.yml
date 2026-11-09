@@ -25,6 +25,9 @@ server:
   # Railway 는 PORT 환경 변수로 포트를 알려 준다. 없으면 8080
   port: ${PORT:8080}
   forward-headers-strategy: framework
+  # 홈 화면에 추가용 앱 정보 파일
+  mime-mappings:
+    webmanifest: application/manifest+json
   shutdown: graceful
 
 lucklounge:

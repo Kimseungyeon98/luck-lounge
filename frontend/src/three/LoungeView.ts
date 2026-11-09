@@ -411,6 +411,12 @@ export class LoungeView {
     return this.renderer.domElement;
   }
 
+  /** 입장 화면에서 카드에 가리지 않는 영역 (화면 px). 미리보기 캐릭터를 이 안 가운데에 맞춘다 */
+  private previewArea: { x: number; y: number; w: number; h: number } | null = null;
+  setPreviewArea(a: { x: number; y: number; w: number; h: number }) {
+    this.previewArea = a.w > 40 && a.h > 40 ? a : null;
+  }
+
   /** 입장 화면에서 고른 캐릭터·닉네임을 미리보기에 반영 */
   preview(nickname: string, characterIndex: number) {
     this.me.set(nickname || ' ', characterIndex);
@@ -665,9 +671,24 @@ export class LoungeView {
     this.t += dt;
 
     const mp = this.me.group.position;
+    let previewZoom = 2.3;
     if (this.mode === 'preview') {
       if (!this.reduceMotion) this.me.facing.rotation.y += dt * 0.7;
-      this.camGoal.set(mp.x, -0.35, mp.z);
+      const W = this.container.clientWidth;
+      const H = this.container.clientHeight;
+      const a = this.previewArea;
+      if (a && W && H) {
+        // 캐릭터(이름표 포함 약 1.3 화면 단위)가 보이는 영역 높이의 70%가 되게
+        const vh = W / H > 1 ? this.viewHeight * 0.8 : this.viewHeight;
+        previewZoom = Math.max(0.8, Math.min(3, (0.7 * a.h * vh) / (1.3 * H)));
+        const offUp = (0.5 - (a.y + a.h / 2) / H) * (vh / previewZoom);
+        const offRight = ((a.x + a.w / 2) / W - 0.5) * ((vh * W) / H / previewZoom);
+        const right = new THREE.Vector3().setFromMatrixColumn(this.camera.matrixWorld, 0);
+        const up = new THREE.Vector3().setFromMatrixColumn(this.camera.matrixWorld, 1);
+        this.camGoal.set(mp.x, 0.75, mp.z).addScaledVector(up, -offUp).addScaledVector(right, -offRight);
+      } else {
+        this.camGoal.set(mp.x, -0.35, mp.z);
+      }
     } else if (this.voting) {
       this.camGoal.set(0, 0.3, 2.3);
     } else if (this.bombState || this.balloonState) {
@@ -677,7 +698,7 @@ export class LoungeView {
     } else {
       this.camGoal.set(Math.max(-3.0, Math.min(2.6, mp.x - 0.5)), 0.3, Math.max(-3.2, Math.min(2.4, mp.z - 0.3)));
     }
-    this.zoomGoal = this.mode === 'preview' ? 2.3 : this.voting ? 0.64 : this.bombState || this.balloonState ? 0.95 : 1.05;
+    this.zoomGoal = this.mode === 'preview' ? previewZoom : this.voting ? 0.64 : this.bombState || this.balloonState ? 0.95 : 1.05;
     if (this.bombState?.holder) {
       const h = this.people.get(this.bombState.holder);
       if (h) {
