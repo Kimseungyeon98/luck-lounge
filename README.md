@@ -3,7 +3,7 @@
 > 운으로 정하거나, 실력으로 겨루거나.
 
 매일 아침 회사 동료들과 커피 내기를 하는 모바일 웹 게임입니다.
-팀 링크로 들어와 3D 사무실 라운지를 걸어다니다가, 게임 부스로 걸어가 투표하고, 오늘 쏠 사람을 정합니다.
+고정 주소에서 방 코드를 넣거나 새 방을 만들어 3D 사무실 라운지에 들어와 걸어다니다가, 게임 부스로 걸어가 투표하고, 오늘 쏠 사람을 정합니다.
 라운지 왼쪽은 **복불복 존**(운), 오른쪽은 **경쟁 존**(실력)입니다.
 
 - **사다리 타기** (복불복): 10초 안에 줄 하나를 고르면 사다리를 따라 내려가요. ☕ 칸에 닿은 사람이 당첨
@@ -25,7 +25,8 @@
 | M5 | 풍선 불기, 통계 게시판(이번 달·지난달·전체) | 완료 |
 | M6 | 캐릭터 v2 (그려 넣은 얼굴·상황별 표정·눈 깜빡임) | 완료 |
 | M7 | 경쟁 존: 10초 멈추기, 탑 쌓기, 혼자 연습, 개인·팀 최고 기록 | 완료 |
-| M8 | 사다리 타기·과녁 멈추기, 라운지 넓히기(부스 6개), 이동 1.25배, 투표 중 규칙 카드 | 진행 중 |
+| M8 | 사다리 타기·과녁 멈추기, 라운지 넓히기(부스 6개), 이동 1.25배, 투표 중 규칙 카드 | 완료 |
+| M9 | 고정 주소 + 방 코드(6자리) 입장, 새 방 만들기(기기당 하루 3개), 최근 방 바로 입장 | 진행 중 |
 
 ## 구조
 
@@ -43,7 +44,7 @@ Caddy ── Spring Boot 4 (Java 25) ── PostgreSQL
 |---|---|
 | `backend/` | Spring Boot. `team`, `player`, `lobby`(위치·말풍선·방장·투표·시한폭탄·풍선 불기·경쟁 게임), `record`(내기 기록·통계 `GET /api/teams/{t}/stats`·최고 기록 `GET /api/teams/{t}/bests`) 패키지 |
 | `frontend/` | Three.js + Vite. 3D 라운지 위에 입장 카드(DOM)와 대기실 표시줄 |
-| `deploy/` | Dockerfile, docker-compose, Caddyfile, 팀 링크·백업 스크립트 |
+| `deploy/` | Dockerfile, docker-compose, Caddyfile, 방 코드·백업 스크립트 |
 | `Dockerfile` | Railway 배포용 이미지 (프론트 + 백엔드를 한 번에 빌드) |
 | `docs/railway-setup.md` | Railway 무료 배포 안내 |
 | `docs/oracle-setup.md` | Oracle 무료 VM 배포 안내 (대안) |
@@ -60,7 +61,7 @@ docker run -d --name ll-db -e POSTGRES_DB=lucklounge -e POSTGRES_USER=lucklounge
 ./gradlew :backend:bootRun
 ```
 
-로그에 `팀 링크 [우리 팀] http://localhost:8080/t/xxxxxxxx` 가 찍히면 그 주소를 엽니다.
+`http://localhost:8080/` 을 열고 로그에 찍힌 `방 [우리 팀] 코드 XXXXXX` 의 코드를 넣거나 새 방을 만듭니다.
 같은 와이파이의 휴대폰에서 보려면 `localhost` 대신 PC의 IP를 씁니다.
 
 화면 코드를 고치면서 보려면 백엔드를 띄운 채로:
@@ -69,7 +70,7 @@ docker run -d --name ll-db -e POSTGRES_DB=lucklounge -e POSTGRES_USER=lucklounge
 cd frontend && npm install && npm run dev
 ```
 
-`http://localhost:5173/t/xxxxxxxx` 에서 저장할 때마다 바로 반영됩니다.
+`http://localhost:5173/` 에서 저장할 때마다 바로 반영됩니다.
 
 ## 테스트
 

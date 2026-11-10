@@ -1,5 +1,5 @@
 import './style.css';
-import { api, ApiError } from './api';
+import { api, ApiError, type Team } from './api';
 import { showEntry } from './entry';
 import { showLobbyHud } from './lobbyHud';
 import { attachLobbyInput } from './lobbyInput';
@@ -14,22 +14,12 @@ import { closeSheet } from './sheets';
 import { boothAt } from './three/lounge';
 import { connectLounge } from './net/loungeSocket';
 import { unlockAudio } from './sound';
-import { clearToken } from './storage';
+import { clearToken, loadCurrentRoom, saveCurrentRoom, saveLastRoom } from './storage';
+import { showHome } from './home';
 import type { LoungeView } from './three/LoungeView';
 
 const app = document.getElementById('app')!;
 const stage = document.getElementById('stage')!;
-
-function notice(title: string, body: string) {
-  const main = document.createElement('main');
-  main.className = 'notice';
-  const h1 = document.createElement('h1');
-  h1.textContent = title;
-  const p = document.createElement('p');
-  p.textContent = body;
-  main.append(h1, p);
-  app.replaceChildren(main);
-}
 
 async function createView(): Promise<LoungeView | null> {
   try {
@@ -42,23 +32,32 @@ async function createView(): Promise<LoungeView | null> {
   }
 }
 
+/** 고정 주소(/) 하나로 들어온다. 주소에 방 정보가 없고, 방은 첫 화면에서 코드로 고른다 (M9) */
+async function pickRoom(): Promise<Team> {
+  // 예전 링크·잘못된 주소로 왔으면 주소만 첫 화면으로 정리 (서버도 /t/... 는 / 로 보낸다)
+  if (location.pathname !== '/') history.replaceState(null, '', '/');
+  // 같은 탭에서 새로고침: 들어가 있던 방으로 바로
+  const current = loadCurrentRoom();
+  let message = '';
+  if (current) {
+    try {
+      return await api.team(current);
+    } catch (e) {
+      saveCurrentRoom(null);
+      if (e instanceof ApiError && e.status === 404) message = e.message;
+    }
+  }
+  return showHome(app, message);
+}
+
 async function boot() {
-  const match = location.pathname.match(/^\/t\/([a-z0-9]+)\/?$/);
-  if (!match) {
-    notice('운빨 라운지', '팀 링크로 들어와 주세요. 링크는 단톡방 공지에 있어요.');
-    return;
-  }
-  const slug = match[1];
-  let team;
-  try {
-    team = await api.team(slug);
-  } catch (e) {
-    notice('들어갈 수 없어요', e instanceof ApiError ? e.message : '잠시 후 다시 시도해 주세요.');
-    return;
-  }
+  const viewReady = createView();
+  const team = await pickRoom();
+  saveCurrentRoom(team.slug);
+  saveLastRoom(team);
   document.title = `${team.name} · 운빨 라운지`;
 
-  const view = await createView();
+  const view = await viewReady;
   const me = await showEntry(app, team, {
     onPreview: (nickname, characterIndex) => view?.preview(nickname, characterIndex),
     onPreviewArea: (area) => view?.setPreviewArea(area),

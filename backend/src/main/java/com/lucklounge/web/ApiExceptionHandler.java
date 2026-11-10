@@ -29,6 +29,11 @@ class ApiExceptionHandler {
         return body(HttpStatus.BAD_REQUEST, e.getMessage());
     }
 
+    @ExceptionHandler(TooManyRequestsException.class)
+    ResponseEntity<ErrorResponse> tooMany(TooManyRequestsException e) {
+        return body(HttpStatus.TOO_MANY_REQUESTS, e.getMessage());
+    }
+
     @ExceptionHandler({MethodArgumentNotValidException.class, HttpMessageNotReadableException.class})
     ResponseEntity<ErrorResponse> invalid(Exception e) {
         return body(HttpStatus.BAD_REQUEST, "입력값을 확인해 주세요.");

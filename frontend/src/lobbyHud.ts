@@ -1,4 +1,6 @@
 import type { Team } from './api';
+import { copyText, inviteText } from './home';
+import { saveCurrentRoom } from './storage';
 import type { ConnectionState, Member } from './net/loungeSocket';
 import { setSoundEnabled, soundEnabled } from './sound';
 import { closeSheet, openSheet } from './sheets';
@@ -123,9 +125,22 @@ export function showLobbyHud(root: HTMLElement, team: Team, myId: string, action
 
   // 지금 라운지에 있는 사람
   const peopleList = h('ul', { className: 'people-list' });
-  const peopleSheet = h('div', { className: 'sheet', hidden: true, role: 'dialog', ariaLabel: '접속한 사람' }, [
+  // 방 코드: 고정 주소에서 이 코드를 넣으면 들어온다 (M9)
+  const copyStatus = h('p', { className: 'copy-status', role: 'status' });
+  const copyCode = h('button', { type: 'button', className: 'secondary' }, ['코드 복사']);
+  const copyInvite = h('button', { type: 'button', className: 'secondary' }, ['초대 문구 복사']);
+  const leaveRoom = h('button', { type: 'button', className: 'link' }, ['다른 방으로 가기']);
+  copyCode.addEventListener('click', async () => { copyStatus.textContent = (await copyText(team.code)) ? '방 코드를 복사했어요' : `복사가 안 돼요. ${team.code} 를 직접 알려 주세요`; });
+  copyInvite.addEventListener('click', async () => { copyStatus.textContent = (await copyText(inviteText(team))) ? '초대 문구를 복사했어요. 단톡방에 붙여 주세요' : '복사가 안 돼요. 코드를 직접 알려 주세요'; });
+  leaveRoom.addEventListener('click', () => { saveCurrentRoom(null); location.reload(); });
+  const peopleSheet = h('div', { className: 'sheet', hidden: true, role: 'dialog', ariaLabel: '방 정보와 접속한 사람' }, [
+    h('h2', {}, [`${team.name} · 방 코드 `, h('span', { className: 'room-code' }, [team.code])]),
+    h('p', { className: 'sheet-note' }, [`${location.host} 에서 이 코드를 넣으면 들어와요.`]),
+    h('div', { className: 'two-btns' }, [copyCode, copyInvite]),
+    copyStatus,
     h('h2', {}, ['지금 라운지에 있는 사람']),
     peopleList,
+    leaveRoom,
     h('button', { type: 'button', className: 'sheet-close' }, ['닫기']),
   ]);
 
@@ -157,7 +172,7 @@ export function showLobbyHud(root: HTMLElement, team: Team, myId: string, action
     h('div', { className: 'guide-card' }, [guideN, guideT, guideD, h('div', { className: 'guide-btns' }, [guideSkip, guideNext])]),
   ]);
 
-  const teamBox = h('button', { type: 'button', className: 'hud-team', ariaLabel: '접속한 사람 보기' }, [h('b', {}, [team.name]), count]);
+  const teamBox = h('button', { type: 'button', className: 'hud-team', ariaLabel: '방 코드와 접속한 사람 보기' }, [h('b', {}, [team.name]), count]);
   const hud = h('div', { className: 'hud' }, [
     h('div', { className: 'hud-top' }, [teamBox, h('div', { className: 'hud-buttons' }, [hostBtn, statsBtn, helpBtn, settingsBtn])]),
     conn,
@@ -333,7 +348,7 @@ export function showLobbyHud(root: HTMLElement, team: Team, myId: string, action
     },
     setPresence(list: Member[], newHost: string | null) {
       members = list;
-      count.textContent = `접속 ${list.length}명 ▾`;
+      count.textContent = `${team.code} · 접속 ${list.length}명 ▾`;
       const onlineHost = list.some((m) => m.playerId === newHost) ? newHost : null;
       if (hostId !== null && onlineHost !== null && onlineHost !== hostId) {
         const who = list.find((m) => m.playerId === onlineHost);

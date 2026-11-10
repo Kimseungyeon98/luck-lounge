@@ -113,7 +113,7 @@ input[type="text"]:focus { outline: none; border-color: var(--focus); box-shadow
 .resume-chip button, .link {
   border: 0; background: none; color: var(--muted); text-decoration: underline; cursor: pointer; padding: 4px; font-size: 13px;
 }
-.link { align-self: center; }
+.link { align-self: center; min-height: 44px; padding: 4px 12px; font-size: 14px; }
 .members { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; }
 .member {
   display: inline-flex; align-items: center; gap: 6px;
@@ -504,3 +504,34 @@ input[type="text"]:focus { outline: none; border-color: var(--focus); box-shadow
 .ladder-tops button.taken { background: var(--c); color: #ffffff; cursor: default; }
 .ladder-tops button.mine { box-shadow: 0 0 0 4px #ffffff, 0 0 0 7px var(--c); }
 .ladder-tops button:focus-visible { outline: 3px solid var(--focus); outline-offset: 4px; }
+
+/* ---------- M9: 고정 주소 첫 화면 (방 코드 입력·새 방 만들기) ---------- */
+.recent-room {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px; width: 100%;
+  border: 1.5px dashed var(--accent); border-radius: 14px; background: #fff6f1; color: var(--ink);
+  padding: 10px 12px; font: inherit; text-align: left; cursor: pointer; min-height: 56px;
+}
+.recent-room b { display: block; font-size: 16px; }
+.recent-room small { font-size: 13px; color: var(--muted); letter-spacing: 0.04em; }
+.recent-go { flex: none; font-size: 14px; font-weight: 800; color: #c4461d; }
+.recent-room:disabled { opacity: 0.6; }
+.recent-room:focus-visible, .code-input:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+.divider { display: flex; align-items: center; gap: 10px; font-size: 13px; color: var(--muted); }
+.divider::before, .divider::after { content: ""; flex: 1; height: 1px; background: #e3ddd3; }
+input.code-input {
+  font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace; font-size: 28px; font-weight: 700;
+  letter-spacing: 0.32em; text-align: center; text-transform: uppercase; padding: 10px 0 10px 0.32em;
+}
+input.code-input::placeholder { color: #c8cfd8; }
+input.code-input.bad { border-color: var(--error); }
+.primary.dark { background: var(--ink); }
+.two-btns { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.code-big {
+  font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace; font-size: 40px; font-weight: 700;
+  letter-spacing: 0.14em; text-align: center; background: #f6f3ee; border-radius: 16px; padding: 10px 0 10px 0.14em;
+}
+.made-title { margin: 0; font-size: 16px; }
+.copy-status { margin: 0; font-size: 14px; color: #1f5fd6; min-height: 1.2em; }
+.copy-status:empty { display: none; }
+.room-code { font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace; letter-spacing: 0.06em; }
+.home .card .hint { display: block; }
