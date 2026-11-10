@@ -19,8 +19,16 @@ public class Team {
     @Column(nullable = false, unique = true, length = 16)
     private String slug;
 
+    /** 고정 주소에서 입력하는 방 코드 (6자리, 대문자+숫자) */
+    @Column(nullable = false, unique = true, length = 6)
+    private String code;
+
     @Column(nullable = false, length = 40)
     private String name;
+
+    /** 만든 기기 열쇠의 해시 (하루 생성 제한용). 서버가 만든 기본 팀은 null */
+    @Column(name = "created_by", length = 64)
+    private String createdBy;
 
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;
@@ -28,9 +36,11 @@ public class Team {
     protected Team() {
     }
 
-    public Team(String slug, String name, Instant createdAt) {
+    public Team(String slug, String code, String name, String createdBy, Instant createdAt) {
         this.slug = slug;
+        this.code = code;
         this.name = name;
+        this.createdBy = createdBy;
         this.createdAt = createdAt;
     }
 
@@ -40,6 +50,14 @@ public class Team {
 
     public String getSlug() {
         return slug;
+    }
+
+    public String getCode() {
+        return code;
+    }
+
+    public String getCreatedBy() {
+        return createdBy;
     }
 
     public String getName() {

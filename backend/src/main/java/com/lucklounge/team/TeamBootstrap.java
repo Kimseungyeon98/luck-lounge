@@ -12,8 +12,8 @@ import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * 서버가 처음 뜰 때 팀이 하나도 없으면 기본 팀을 만들고, 매번 시작할 때 팀 링크를 로그에 남긴다.
- * 운영 서버에서는 deploy/teams.sh 로도 링크를 확인할 수 있다.
+ * 서버가 처음 뜰 때 팀이 하나도 없으면 기본 팀을 만들고, 매번 시작할 때 방 코드를 로그에 남긴다.
+ * 방이 많아지면 로그가 길어지므로 서버가 만든 팀(기본 팀)만 남긴다.
  */
 @Component
 class TeamBootstrap implements ApplicationRunner {
@@ -34,16 +34,14 @@ class TeamBootstrap implements ApplicationRunner {
     @Transactional
     public void run(ApplicationArguments args) {
         if (teams.count() == 0) {
-            String slug = TeamSlugs.generate();
-            while (teams.existsBySlug(slug)) {
-                slug = TeamSlugs.generate();
-            }
-            teams.save(new Team(slug, properties.defaultTeamName(), Instant.now(clock)));
+            teams.save(new Team(TeamSlugs.generate(), TeamSlugs.generateCode(), properties.defaultTeamName(), null, Instant.now(clock)));
             log.info("기본 팀을 만들었습니다: {}", properties.defaultTeamName());
         }
         List<Team> all = teams.findAll();
         for (Team team : all) {
-            log.info("팀 링크 [{}] {}", team.getName(), properties.teamLink(team.getSlug()));
+            if (team.getCreatedBy() == null) {
+                log.info("방 [{}] 코드 {} · {}", team.getName(), team.getCode(), properties.baseUrl());
+            }
         }
     }
 }

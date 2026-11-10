@@ -1,6 +1,6 @@
 import { api, ApiError, type Joined, type PlayerView, type Team } from './api';
 import { CHARACTER_COUNT, CHARACTER_NAMES, characterDataUrl } from './characters';
-import { loadToken, saveToken } from './storage';
+import { loadToken, saveCurrentRoom, saveToken } from './storage';
 
 function el<K extends keyof HTMLElementTagNameMap>(tag: K, props: Record<string, unknown> = {}, children: (Node | string)[] = []): HTMLElementTagNameMap[K] {
   const node = Object.assign(document.createElement(tag), props) as HTMLElementTagNameMap[K];
@@ -117,10 +117,15 @@ export async function showEntry(root: HTMLElement, team: Team, hooks: EntryHooks
     card.append(toggle, list);
   }
 
+  // 다른 방으로: 지금 방 기억을 지우고 첫 화면부터 (주소는 그대로 /)
+  const leave = el('button', { type: 'button', className: 'link' }, ['다른 방으로']);
+  leave.addEventListener('click', () => { saveCurrentRoom(null); location.reload(); });
+  card.append(leave);
+
   const head = el('header', { className: 'entry-head' }, [
       el('p', { className: 'brand' }, ['운빨 라운지']),
       el('h1', {}, [team.name]),
-      el('p', { className: 'sub' }, ['운으로, 실력으로, 오늘의 커피 내기']),
+      el('p', { className: 'sub' }, [`방 코드 ${team.code}`]),
   ]);
   const main = el('main', { className: 'entry' }, [head, card]);
   root.replaceChildren(main);

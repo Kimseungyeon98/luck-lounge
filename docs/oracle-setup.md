@@ -119,16 +119,16 @@ GitHub 저장소 → **Settings → Secrets and variables → Actions → New re
 
 > 비밀값은 대화창이나 이슈에 붙이지 마세요. GitHub Secrets에만 넣습니다.
 
-## 8. 첫 배포와 팀 링크 확인
+## 8. 첫 배포와 방 코드 확인
 
 GitHub → **Actions → Deploy → Run workflow** (또는 `main`에 머지).
-끝나면 로그 마지막에 팀 링크가 찍힙니다. 서버에서 직접 확인하려면:
+끝나면 로그 마지막에 기본 방의 코드가 찍힙니다. 서버에서 직접 확인하려면:
 
 ```bash
 /opt/luck-lounge/teams.sh
 ```
 
-`우리 팀 https://lucklounge.duckdns.org/t/xxxxxxxx` 형태로 나옵니다. 이 링크를 단톡방 공지에 걸면 됩니다.
+`우리 팀 XXXXXX https://lucklounge.duckdns.org/` 형태로 나옵니다. 주소와 방 코드를 단톡방 공지에 올리면 됩니다.
 
 ## 9. 매일 백업
 
