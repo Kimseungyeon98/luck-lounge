@@ -11,7 +11,7 @@ import { createSkillHud } from './skillHud';
 import { createLadderHud } from './ladderHud';
 import { formatScore } from './skill/games';
 import { closeSheet } from './sheets';
-import { BOOTHS, COFFEE_SPOT, ROOM_NAMES, boothAt, roomOf, type RoomId } from './three/lounge';
+import { BOOTHS, ROOM_NAMES, boothAt, roomOf, type RoomId } from './three/lounge';
 import { connectLounge } from './net/loungeSocket';
 import { unlockAudio } from './sound';
 import { clearToken, loadCurrentRoom, saveCurrentRoom, saveLastRoom } from './storage';
@@ -92,19 +92,31 @@ async function boot() {
 
   // ---------- M10: 방 세 개 ----------
   let gameRunning = false;
-  // 탕비실 커피 머신 앞: 커피 한 잔 (☕ 이모티콘)
-  const coffeeBtn = document.createElement('button');
-  coffeeBtn.type = 'button';
-  coffeeBtn.className = 'practice-btn coffee-btn';
-  coffeeBtn.textContent = '☕ 커피 한 잔';
-  coffeeBtn.hidden = true;
-  coffeeBtn.addEventListener('click', () => socket?.emote('☕'));
-  hud.slot.append(coffeeBtn);
+  // M11: 앉기·일어나기·커피 (PC Space, 휴대폰 버튼)
+  const pcKeys = matchMedia('(pointer: fine)').matches;
+  const interact = () => {
+    const it = view?.interaction();
+    if (!it || gameRunning) return;
+    if (it.kind === 'stand') socket?.stand();
+    else if (it.kind === 'coffee') socket?.drink();
+    else socket?.sit(it.seat.id);
+  };
+  let actKey = '';
+  const refreshAct = () => {
+    const it = gameRunning ? null : view?.interaction() ?? null;
+    const label = !it ? '' : it.kind === 'stand' ? '일어나기' : it.kind === 'coffee' ? '☕ 커피 마시기' : `🪑 ${it.seat.kind}에 앉기`;
+    const key = `${label}|${pcKeys}`;
+    if (key === actKey) return;
+    actKey = key;
+    hud.actButton.hidden = !label;
+    hud.actButton.replaceChildren(...(pcKeys && label ? [Object.assign(document.createElement('kbd'), { textContent: 'Space' })] : []), label);
+  };
+  hud.actButton.addEventListener('click', interact);
   // 방에 들어가면 이름을 잠깐 보여 준다
   let myRoom: RoomId | null = null;
   const ROOM_TIP: Record<RoomId, string> = {
     MAIN: '게임 부스 6개',
-    PANTRY: '오늘의 커피 당첨자 보드 · 커피 머신 앞에서 한 잔',
+    PANTRY: '오늘의 커피 당첨자 보드 · 커피 머신 앞에서 커피 마시기',
     MEETING: '화이트보드를 누르면 통계·최고 기록',
   };
   // 탕비실 보드: 오늘의 커피 당첨자
@@ -138,7 +150,7 @@ async function boot() {
       if (mine) {
         const b = boothAt(mine.x, mine.z);
         skillHud.setBooth(b === 'STOP' || b === 'TOWER' || b === 'TARGET' ? b : null);
-        coffeeBtn.hidden = gameRunning || Math.hypot(mine.x - COFFEE_SPOT.x, mine.z - COFFEE_SPOT.z) > COFFEE_SPOT.r;
+        refreshAct();
         const room = roomOf(mine.x, mine.z);
         if (room !== myRoom) {
           if (myRoom !== null && !gameRunning) hud.toast(`${ROOM_NAMES[room]} · ${ROOM_TIP[room]}`);
@@ -149,6 +161,7 @@ async function boot() {
     onEvent: (e) => {
       if (e.type === 'chat') view?.say(e.playerId, e.text, false);
       else if (e.type === 'emote') view?.say(e.playerId, e.text, true);
+      else if (e.type === 'drink') view?.drink(e.playerId);
     },
     onBomb: (b) => {
       if (b.type === 'start' && b.order && b.holder) {
@@ -168,7 +181,10 @@ async function boot() {
     },
     onMatch: (m) => {
       if (m.type === 'vote') closeSheet();
-      matchHud.handle(m, (running) => { gameRunning = running; if (running) coffeeBtn.hidden = true; hud.setGameRunning(running); skillHud.setRunning(running); });
+      // 투표 중에는 아래쪽 줄이 투표 안내로 바뀌어, 오른쪽 둥근 버튼을 그 위로 내린다 (부스를 가리지 않게)
+      if (m.type === 'vote') document.body.classList.add('voting');
+      else if (m.type === 'voteResult' || m.type === 'finish') document.body.classList.remove('voting');
+      matchHud.handle(m, (running) => { gameRunning = running; refreshAct(); hud.setGameRunning(running); skillHud.setRunning(running); });
       if (m.type === 'voteResult') skillHud.setWinnersTarget(m.winnersTarget ?? 1);
       if (m.type === 'roundEnd' && m.gameType === 'LADDER') ladderHud.roundEnd();
       else if (m.type === 'roundEnd' && m.gameType !== 'STOP' && m.gameType !== 'TOWER' && m.gameType !== 'TARGET') {
@@ -233,7 +249,18 @@ async function boot() {
   // 앱을 벗어나면 자리비움 (2단계 M3 결정)
   document.addEventListener('visibilitychange', () => socket?.away(document.hidden));
 
-  if (view) attachLobbyInput(view, socket, () => hud.moveMode, () => hud.hideHint(), () => statsSheet.open());
+  if (view) {
+    const input = attachLobbyInput(view, socket, () => hud.moveMode, () => hud.hideHint(), () => statsSheet.open(), {
+      interact,
+      openChat: () => hud.openChat(),
+    });
+    // 휴대폰 달리기 버튼: 누르고 있는 동안
+    const run = hud.runButton;
+    const setRun = (on: boolean) => { input.setRunButton(on); run.setAttribute('aria-pressed', String(on)); };
+    run.addEventListener('pointerdown', (e) => { e.preventDefault(); try { run.setPointerCapture(e.pointerId); } catch { /* 무시 */ } setRun(true); });
+    for (const ev of ['pointerup', 'pointercancel', 'lostpointercapture'] as const) run.addEventListener(ev, () => setRun(false));
+    run.addEventListener('contextmenu', (e) => e.preventDefault());
+  }
 }
 
 void boot();

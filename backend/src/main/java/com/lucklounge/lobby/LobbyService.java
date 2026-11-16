@@ -152,13 +152,13 @@ public class LobbyService implements SmartLifecycle {
         }
     }
 
-    public void move(LoungePrincipal p, Double tx, Double tz, Double dx, Double dz) {
+    public void move(LoungePrincipal p, Double tx, Double tz, Double dx, Double dz, boolean run) {
         LobbyRoom room = room(p.teamSlug());
         boolean wasAway = room.setAway(p.playerId(), false);
         if (tx != null && tz != null) {
-            room.moveTo(p.playerId(), tx, tz);
+            room.moveTo(p.playerId(), tx, tz, run);
         } else {
-            room.steer(p.playerId(), dx == null ? 0 : dx, dz == null ? 0 : dz);
+            room.steer(p.playerId(), dx == null ? 0 : dx, dz == null ? 0 : dz, run);
         }
         if (wasAway) {
             broadcastPresence(p.teamSlug());
@@ -177,6 +177,25 @@ public class LobbyService implements SmartLifecycle {
     public void emote(LoungePrincipal p, String emoji) {
         if (emoji != null && EMOTES.contains(emoji) && room(p.teamSlug()).allowChat(p.playerId(), clock.instant())) {
             event(p.teamSlug(), new LobbyEvent("emote", p.playerId(), emoji));
+        }
+    }
+
+    /** 앉기 (M11). 위치는 다음 틱에 방송된다 */
+    public void sit(LoungePrincipal p, Integer seat) {
+        if (seat != null) {
+            room(p.teamSlug()).sit(p.playerId(), seat);
+        }
+    }
+
+    public void stand(LoungePrincipal p) {
+        room(p.teamSlug()).stand(p.playerId());
+    }
+
+    /** 커피 마시기: 커피 머신 앞에서만. 모두에게 3초 마시는 동작 */
+    public void drink(LoungePrincipal p) {
+        LobbyRoom room = room(p.teamSlug());
+        if (room.canDrink(p.playerId()) && room.allowChat(p.playerId(), clock.instant())) {
+            event(p.teamSlug(), new LobbyEvent("drink", p.playerId(), "☕"));
         }
     }
 

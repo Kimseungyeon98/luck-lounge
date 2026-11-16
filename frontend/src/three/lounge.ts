@@ -15,15 +15,15 @@ export interface Booth {
 
 /**
  * 게임 부스 자리. 메인 대기실 왼쪽이 복불복 존, 오른쪽이 경쟁 존.
- * 서버 backend/.../lobby/Match.java 의 Booth 와 같은 값이어야 한다. (M10: 메인 1.6배)
+ * 서버 backend/.../lobby/Match.java 의 Booth 와 같은 값이어야 한다. (M11: 메인 앞쪽 한 줄)
  */
 export const BOOTHS: { id: GameType; name: string; x: number; z: number; skill: boolean; rule: string }[] = [
-  { id: 'LADDER', name: '사다리 타기', x: -7.6, z: -3.2, skill: false, rule: '줄 하나 고르면 사다리를 따라 내려가요 · ☕ 칸이 당첨' },
-  { id: 'BOMB', name: '시한폭탄', x: -7.6, z: 0.8, skill: false, rule: '1~5초 안에 넘기기 · 터질 때 들고 있으면 당첨' },
-  { id: 'BALLOON', name: '풍선 불기', x: -7.6, z: 4.8, skill: false, rule: '차례대로 1~3번 펌프 · 터뜨리면 당첨' },
-  { id: 'TARGET', name: '과녁 멈추기', x: 7.6, z: -3.2, skill: true, rule: '움직이는 바늘을 가운데에 3번 · 가장 먼 사람이 당첨' },
-  { id: 'STOP', name: '10초 멈추기', x: 7.6, z: 0.8, skill: true, rule: '사라진 시계를 딱 10.00초에 · 가장 먼 사람이 당첨' },
-  { id: 'TOWER', name: '탑 쌓기', x: 7.6, z: 4.8, skill: true, rule: '블록을 눌러 쌓기 · 가장 낮은 사람이 당첨' },
+  { id: 'LADDER', name: '사다리 타기', x: -9.0, z: 5.4, skill: false, rule: '줄 하나 고르면 사다리를 따라 내려가요 · ☕ 칸이 당첨' },
+  { id: 'BOMB', name: '시한폭탄', x: -5.6, z: 5.4, skill: false, rule: '1~5초 안에 넘기기 · 터질 때 들고 있으면 당첨' },
+  { id: 'BALLOON', name: '풍선 불기', x: -2.2, z: 5.4, skill: false, rule: '차례대로 1~3번 펌프 · 터뜨리면 당첨' },
+  { id: 'TARGET', name: '과녁 멈추기', x: 2.2, z: 5.4, skill: true, rule: '움직이는 바늘을 가운데에 3번 · 가장 먼 사람이 당첨' },
+  { id: 'STOP', name: '10초 멈추기', x: 5.6, z: 5.4, skill: true, rule: '사라진 시계를 딱 10.00초에 · 가장 먼 사람이 당첨' },
+  { id: 'TOWER', name: '탑 쌓기', x: 9.0, z: 5.4, skill: true, rule: '블록을 눌러 쌓기 · 가장 낮은 사람이 당첨' },
 ];
 export const BOOTH_RADIUS = 1.45;
 
@@ -49,7 +49,7 @@ const CIRCLES: [number, number, number][] = [
   ...BOOTHS.map((b) => [b.x, b.z - 0.2, 0.75] as [number, number, number]),
   [0.0, -3.2, 0.8], [-3.7, -3.5, 0.55], [3.7, -3.5, 0.55], [3.3, -5.4, 0.25],
   [-10.6, -5.4, 0.55], [10.6, -5.4, 0.55], [-10.6, 7.0, 0.55], [10.6, 7.0, 0.55],
-  [-3.0, 6.5, 0.5], [2.8, 6.6, 0.5],
+  [-6.6, -3.2, 0.5], [-8.4, -2.4, 0.5],
   [-17.55, -4.3, 0.3], [-15.4, -1.9, 1.0], [-12.1, 0.7, 0.3], [-17.4, 0.6, 0.45],
   [12.1, 0.9, 0.45], [18.3, 7.1, 0.45],
 ];
@@ -88,7 +88,22 @@ export function walkBounds(room: RoomId): { minX: number; maxX: number; minZ: nu
 }
 
 /** 탕비실 커피 머신 앞 (여기 서면 "커피 마시기" 버튼) */
-export const COFFEE_SPOT = { x: -15.9, z: -4.5, r: 1.1 };
+export const COFFEE_SPOT = { x: -15.9, z: -4.5, r: 1.5 };
+
+/** 앉을 자리 (서버 Obstacles.SEATS 와 같은 순서·값). face: 0 = +z 를 바라봄, h: 앉는 높이 */
+export interface Seat { id: number; x: number; z: number; face: number; h: number; kind: string }
+const stoolAt = (a: number) => [-15.4 + Math.sin(a) * 0.78, -1.9 + Math.cos(a) * 0.78, a + Math.PI, 0.66, '카페 의자'] as const;
+export const SEATS: Seat[] = ([
+  [-1.5, -5.05, 0, 0.62, '소파'], [0.0, -5.05, 0, 0.62, '소파'], [1.5, -5.05, 0, 0.62, '소파'],
+  [-3.7, -3.5, Math.PI * 0.62, 0.52, '1인 소파'], [3.7, -3.5, -Math.PI * 0.62, 0.52, '1인 소파'],
+  [-6.6, -3.2, 1.12, 0.42, '빈백'], [-8.4, -2.4, 1.29, 0.42, '빈백'],
+  stoolAt(0.4), stoolAt(2.5), stoolAt(4.5),
+  [14.0, 2.8, 0, 0.5, '회의 의자'], [15.3, 2.8, 0, 0.5, '회의 의자'], [16.6, 2.8, 0, 0.5, '회의 의자'],
+  [14.0, 5.2, Math.PI, 0.5, '회의 의자'], [15.3, 5.2, Math.PI, 0.5, '회의 의자'], [16.6, 5.2, Math.PI, 0.5, '회의 의자'],
+  [13.1, 4.0, Math.PI / 2, 0.5, '회의 의자'], [17.5, 4.0, -Math.PI / 2, 0.5, '회의 의자'],
+] as const).map(([x, z, face, h, kind], id) => ({ id, x, z, face, h, kind }));
+/** 앉을 수 있는 거리 (서버 SEAT_RANGE 보다 조금 짧게: 화면에 버튼이 떴는데 서버가 거절하지 않게) */
+export const SEAT_RANGE = 1.6;
 
 export interface Lounge {
   group: THREE.Group;
@@ -314,7 +329,7 @@ export function buildLounge(): Lounge {
   group.add(shelf);
   // 화분, 빈백
   for (const [x, z] of [[-10.6, -5.4], [10.6, -5.4], [-10.6, 7.0], [10.6, 7.0]]) group.add(plant(x, z));
-  for (const [x, z, c] of [[-3.0, 6.5, 0xf2c94c], [2.8, 6.6, 0x5bb8d6]] as const) {
+  for (const [x, z, c] of [[-6.6, -3.2, 0xf2c94c], [-8.4, -2.4, 0x5bb8d6]] as const) {
     const bag = mesh(new THREE.SphereGeometry(0.55, 18, 12), c, x, 0.32, z);
     bag.scale.set(1, 0.62, 1);
     group.add(bag);
@@ -477,13 +492,14 @@ export function buildLounge(): Lounge {
   };
 
   // 구역 바닥: 왼쪽 복불복 존(파랑), 오른쪽 경쟁 존(초록)
-  for (const [x, color, label, labelColor] of [[-7.6, 0x2f6bff, '복불복 존', '#2F6BFF'], [7.6, 0x12a37a, '경쟁 존', '#12A37A']] as const) {
-    const zone = new THREE.Mesh(new THREE.PlaneGeometry(5.2, 12.2), new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.08, depthWrite: false }));
+  // M11: 앞쪽 한 줄이라 존도 앞쪽 가로 띠
+  for (const [x, color, label, labelColor] of [[-5.6, 0x2f6bff, '복불복 존', '#2F6BFF'], [5.6, 0x12a37a, '경쟁 존', '#12A37A']] as const) {
+    const zone = new THREE.Mesh(new THREE.PlaneGeometry(10.6, 3.8), new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.08, depthWrite: false }));
     zone.rotation.x = -Math.PI / 2;
-    zone.position.set(x, 0.005, 0.9);
+    zone.position.set(x, 0.005, 5.5);
     group.add(zone);
     const sign = signLabel(label, labelColor);
-    sign.position.set(x, 3.0, -5.6);
+    sign.position.set(x, 3.3, 2.6);
     sign.scale.multiplyScalar(1.15);
     group.add(sign);
     signs.push(sign);

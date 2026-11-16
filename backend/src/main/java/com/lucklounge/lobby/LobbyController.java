@@ -11,7 +11,7 @@ import org.springframework.stereotype.Controller;
 @Controller
 class LobbyController {
 
-    record MoveCommand(Double tx, Double tz, Double dx, Double dz) {
+    record MoveCommand(Double tx, Double tz, Double dx, Double dz, Boolean run) {
     }
 
     record ChatCommand(String text) {
@@ -39,7 +39,25 @@ class LobbyController {
 
     @MessageMapping("/t/{team}/move")
     void move(@Payload MoveCommand cmd, Principal principal) {
-        lobby.move(me(principal), cmd.tx(), cmd.tz(), cmd.dx(), cmd.dz());
+        lobby.move(me(principal), cmd.tx(), cmd.tz(), cmd.dx(), cmd.dz(), Boolean.TRUE.equals(cmd.run()));
+    }
+
+    record SitCommand(Integer seat) {
+    }
+
+    @MessageMapping("/t/{team}/sit")
+    void sit(@Payload SitCommand cmd, Principal principal) {
+        lobby.sit(me(principal), cmd.seat());
+    }
+
+    @MessageMapping("/t/{team}/stand")
+    void stand(Principal principal) {
+        lobby.stand(me(principal));
+    }
+
+    @MessageMapping("/t/{team}/drink")
+    void drink(Principal principal) {
+        lobby.drink(me(principal));
     }
 
     @MessageMapping("/t/{team}/chat")

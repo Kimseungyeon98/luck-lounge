@@ -65,7 +65,7 @@ public final class Obstacles {
                 // 메인: 커피 테이블, 1인용 소파 둘, 스탠드, 화분 넷, 빈백 둘
                 {0.0, -3.2, 0.8}, {-3.7, -3.5, 0.55}, {3.7, -3.5, 0.55}, {3.3, -5.4, 0.25},
                 {-10.6, -5.4, 0.55}, {10.6, -5.4, 0.55}, {-10.6, 7.0, 0.55}, {10.6, 7.0, 0.55},
-                {-3.0, 6.5, 0.5}, {2.8, 6.6, 0.5},
+                {-6.6, -3.2, 0.5}, {-8.4, -2.4, 0.5},
                 // 탕비실: 정수기, 카페 테이블(의자 포함), 휴지통, 화분
                 {-17.55, -4.3, 0.3}, {-15.4, -1.9, 1.0}, {-12.1, 0.7, 0.3}, {-17.4, 0.6, 0.45},
                 // 회의실: 화분 둘
@@ -77,7 +77,46 @@ public final class Obstacles {
         CIRCLES = c.toArray(new double[0][]);
     }
 
+    /** 앉을 자리 (M11). face: 앉아서 바라보는 방향(라디안, 0 = +z). 프론트엔드 SEATS 와 같은 순서·값 */
+    public record Seat(int id, double x, double z, double face) {
+    }
+
+    public static final List<Seat> SEATS;
+
+    /** 탕비실 커피 머신 앞 (여기서 커피 마시기) */
+    public static final double COFFEE_X = -15.9;
+    public static final double COFFEE_Z = -4.5;
+    public static final double COFFEE_RANGE = 1.5;
+    /** 자리에 앉을 수 있는 거리 */
+    public static final double SEAT_RANGE = 1.8;
+
+    static {
+        double[][] s = {
+                // 메인: 소파 3, 1인 소파 2, 빈백 2
+                {-1.5, -5.05, 0}, {0.0, -5.05, 0}, {1.5, -5.05, 0},
+                {-3.7, -3.5, Math.PI * 0.62}, {3.7, -3.5, -Math.PI * 0.62},
+                {-6.6, -3.2, 1.12}, {-8.4, -2.4, 1.29},
+                // 탕비실: 카페 스툴 3 (테이블을 바라봄)
+                {-15.4 + Math.sin(0.4) * 0.78, -1.9 + Math.cos(0.4) * 0.78, 0.4 + Math.PI},
+                {-15.4 + Math.sin(2.5) * 0.78, -1.9 + Math.cos(2.5) * 0.78, 2.5 + Math.PI},
+                {-15.4 + Math.sin(4.5) * 0.78, -1.9 + Math.cos(4.5) * 0.78, 4.5 + Math.PI},
+                // 회의실: 의자 8
+                {14.0, 2.8, 0}, {15.3, 2.8, 0}, {16.6, 2.8, 0},
+                {14.0, 5.2, Math.PI}, {15.3, 5.2, Math.PI}, {16.6, 5.2, Math.PI},
+                {13.1, 4.0, Math.PI / 2}, {17.5, 4.0, -Math.PI / 2},
+        };
+        List<Seat> list = new ArrayList<>();
+        for (int i = 0; i < s.length; i++) {
+            list.add(new Seat(i, s[i][0], s[i][1], s[i][2]));
+        }
+        SEATS = List.copyOf(list);
+    }
+
     private Obstacles() {
+    }
+
+    public static boolean nearCoffee(double x, double z) {
+        return Math.hypot(x - COFFEE_X, z - COFFEE_Z) <= COFFEE_RANGE;
     }
 
     public static boolean blocked(double x, double z) {

@@ -23,10 +23,12 @@ public class LobbyRoom {
 
     /** 걷는 속도 (초속 m). M8 에서 라운지를 넓히며 1.25배로 */
     public static final double SPEED = 3.0;
+    /** 달리기 배율 (M11: 1.6배, 초속 4.8m) */
+    public static final double RUN = 1.6;
     static final Duration HOST_GRACE = Duration.ofSeconds(10);
     static final Duration CHAT_INTERVAL = Duration.ofMillis(1000);
     static final double SPAWN_X = 0.0;
-    static final double SPAWN_Z = 5.4;
+    static final double SPAWN_Z = 1.8;
 
     /** 대기실의 한 사람 */
     static final class Member {
@@ -43,6 +45,12 @@ public class LobbyRoom {
         /** 탭 이동으로 다른 방에 갈 때 지날 점들 (문) */
         final java.util.ArrayDeque<double[]> route = new java.util.ArrayDeque<>();
         boolean moving;
+        /** Shift·달리기 버튼 (M11) */
+        boolean running;
+        /** 앉은 자리 (없으면 null)와 앉기 전에 서 있던 곳 */
+        Integer seat;
+        double standX;
+        double standZ;
         boolean away;
         long arrivalOrder;
         Instant lastChatAt = Instant.EPOCH;
@@ -57,7 +65,8 @@ public class LobbyRoom {
         }
     }
 
-    public record PositionView(UUID id, double x, double z, double f, boolean m) {
+    /** s: 앉은 자리 번호(없으면 null), r: 달리는 중 */
+    public record PositionView(UUID id, double x, double z, double f, boolean m, Integer s, boolean r) {
     }
 
     public record MemberView(UUID playerId, String nickname, int characterIndex, boolean away) {
@@ -74,7 +83,7 @@ public class LobbyRoom {
 
     /** 시한폭탄 판이 둥글게 서는 자리의 중심 (테이블·부스와 겹치지 않는 곳) */
     static final double BOMB_CENTER_X = 0.0;
-    static final double BOMB_CENTER_Z = 1.6;
+    static final double BOMB_CENTER_Z = 0.8;
 
     private final String teamSlug;
     private final Map<UUID, Member> members = new LinkedHashMap<>();
@@ -140,6 +149,7 @@ public class LobbyRoom {
         m.dirX = 0;
         m.dirZ = 0;
         m.moving = false;
+        standUp(m);
         if (id.equals(hostId)) {
             hostAbsentSince = now;
         }
@@ -152,10 +162,16 @@ public class LobbyRoom {
 
     /** 탭 이동: 목적지 */
     public synchronized void moveTo(UUID playerId, double tx, double tz) {
+        moveTo(playerId, tx, tz, false);
+    }
+
+    public synchronized void moveTo(UUID playerId, double tx, double tz, boolean run) {
         Member m = onlineMember(playerId);
         if (m == null || locked(playerId) || !Double.isFinite(tx) || !Double.isFinite(tz)) {
             return;
         }
+        standUp(m);
+        m.running = run;
         // 다른 방이면 문을 거쳐서 (M10)
         m.route.clear();
         m.route.addAll(Obstacles.route(m.x, m.z, clamp(tx, Obstacles.MIN_X, Obstacles.MAX_X), clamp(tz, Obstacles.MIN_Z, Obstacles.MAX_Z)));
@@ -166,12 +182,20 @@ public class LobbyRoom {
         m.dirZ = 0;
     }
 
-    /** 조이스틱: 방향과 세기(최대 1). 0이면 멈춤 */
+    /** 조이스틱·키보드: 방향과 세기(최대 1). 0이면 멈춤 */
     public synchronized void steer(UUID playerId, double dx, double dz) {
+        steer(playerId, dx, dz, false);
+    }
+
+    public synchronized void steer(UUID playerId, double dx, double dz, boolean run) {
         Member m = onlineMember(playerId);
         if (m == null || locked(playerId) || !Double.isFinite(dx) || !Double.isFinite(dz)) {
             return;
         }
+        if (Math.hypot(dx, dz) >= 0.05) {
+            standUp(m);   // 움직이면 저절로 일어난다
+        }
+        m.running = run;
         double len = Math.hypot(dx, dz);
         if (len > 1) {
             dx /= len;
@@ -182,6 +206,67 @@ public class LobbyRoom {
         m.targetX = null;
         m.targetZ = null;
         m.route.clear();
+    }
+
+    // ---------- M11: 앉기·커피 ----------
+
+    /** 가까운 빈자리에 앉기. 내기 중이거나 멀거나 누가 앉아 있으면 false */
+    public synchronized boolean sit(UUID playerId, int seatId) {
+        Member m = onlineMember(playerId);
+        if (m == null || match != null || seatId < 0 || seatId >= Obstacles.SEATS.size()) {
+            return false;
+        }
+        Obstacles.Seat seat = Obstacles.SEATS.get(seatId);
+        double fromX = m.seat == null ? m.x : m.standX;
+        double fromZ = m.seat == null ? m.z : m.standZ;
+        if (Math.hypot(fromX - seat.x(), fromZ - seat.z()) > Obstacles.SEAT_RANGE) {
+            return false;
+        }
+        boolean taken = members.values().stream().anyMatch(o -> o != m && o.online() && Integer.valueOf(seatId).equals(o.seat));
+        if (taken) {
+            return false;
+        }
+        if (m.seat == null) {
+            m.standX = m.x;
+            m.standZ = m.z;
+        }
+        m.seat = seatId;
+        m.x = seat.x();
+        m.z = seat.z();
+        m.face = seat.face();
+        m.targetX = null;
+        m.targetZ = null;
+        m.route.clear();
+        m.dirX = 0;
+        m.dirZ = 0;
+        m.moving = false;
+        m.away = false;
+        teleported = true;
+        return true;
+    }
+
+    /** 일어나기 (앉아 있지 않으면 아무 일 없음) */
+    public synchronized void stand(UUID playerId) {
+        Member m = onlineMember(playerId);
+        if (m != null) {
+            standUp(m);
+        }
+    }
+
+    /** 커피 머신 앞이고 내기 중이 아닐 때 */
+    public synchronized boolean canDrink(UUID playerId) {
+        Member m = onlineMember(playerId);
+        return m != null && match == null && m.seat == null && Obstacles.nearCoffee(m.x, m.z);
+    }
+
+    private void standUp(Member m) {
+        if (m.seat == null) {
+            return;
+        }
+        m.seat = null;
+        m.x = m.standX;
+        m.z = m.standZ;
+        teleported = true;
     }
 
     /** @return 바뀌었으면 true */
@@ -276,6 +361,9 @@ public class LobbyRoom {
             return StartFailure.NOT_ENOUGH_PLAYERS;
         }
         match = new Match(Math.max(1, winnersTarget), practice, now, random);
+        for (Member m : members.values()) {
+            standUp(m);
+        }
         gatherToMain();
         return match.started();
     }
@@ -425,9 +513,12 @@ public class LobbyRoom {
     }
 
     private boolean step(Member m, double dt) {
+        if (m.seat != null) {
+            return false;
+        }
         double dx;
         double dz;
-        double speed = SPEED;
+        double speed = SPEED * (m.running ? RUN : 1);
         if (m.dirX != 0 || m.dirZ != 0) {
             double mag = Math.hypot(m.dirX, m.dirZ);
             if (mag < 0.05) {
@@ -510,7 +601,7 @@ public class LobbyRoom {
         List<PositionView> out = new ArrayList<>();
         for (Member m : members.values()) {
             if (m.online()) {
-                out.add(new PositionView(m.id, round(m.x), round(m.z), round(m.face), m.moving));
+                out.add(new PositionView(m.id, round(m.x), round(m.z), round(m.face), m.moving, m.seat, m.moving && m.running));
             }
         }
         return out;
