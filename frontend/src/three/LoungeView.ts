@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import type { Member, Position } from '../net/loungeSocket';
 import { createCharacter, type CharacterRig, type Face } from './characters3d';
 import { chatBubble, disposeSprite, iconSprite, nameLabel } from './labels';
-import { BOOTHS, blocked, boothAt, buildLounge, roomOf, walkBounds, type GameType, type Lounge, type RoomId } from './lounge';
+import { BOOTHS, COFFEE_SPOT, SEATS, SEAT_RANGE, blocked, boothAt, buildLounge, roomOf, walkBounds, type GameType, type Lounge, type RoomId, type Seat } from './lounge';
 
 type Mode = 'preview' | 'lobby';
 
@@ -10,7 +10,8 @@ type Mode = 'preview' | 'lobby';
 const VOTE_CENTER = { x: BOOTHS.reduce((a, b) => a + b.x, 0) / BOOTHS.length, z: BOOTHS.reduce((a, b) => a + b.z, 0) / BOOTHS.length + 0.2 };
 const VOTE_SPAN = (() => {
   const sx = BOOTHS.map((b) => (b.x - b.z) / Math.SQRT2);
-  return Math.max(...sx) - Math.min(...sx) + 2 * 1.45 + 0.8;
+  // 부스 이름표가 받침보다 넓어서 양옆에 여유를 더 둔다 (M11 앞쪽 한 줄)
+  return Math.max(...sx) - Math.min(...sx) + 2 * 1.45 + 3.0;
 })();
 
 interface BombState { order: string[]; holder: string | null; center: THREE.Vector3; loser: string | null }
@@ -43,7 +44,10 @@ class Person {
   private happy = false;
 
   /** 서버가 알려 준 위치·방향·걷는 중 */
-  readonly server = { x: 0, z: 0, f: 0.67, m: false, known: false };
+  readonly server = { x: 0, z: 0, f: 0.67, m: false, known: false, s: null as number | null, r: false };
+  /** 커피 마시는 남은 시간 (M11) */
+  private drinkLeft = 0;
+  private cup?: THREE.Mesh;
 
   constructor(readonly isMe: boolean) {}
 
@@ -141,6 +145,17 @@ class Person {
       this.zz = undefined;
     }
     this.placeOverlays();
+  }
+
+  /** 커피 3초: 손에 컵을 들고 홀짝 (M11) */
+  drink() {
+    this.drinkLeft = 3;
+    if (!this.cup && this.rig?.armR) {
+      this.cup = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.055, 0.13, 12), new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.6 }));
+      this.cup.position.set(0, -0.27, 0.07);
+      this.rig.armR.add(this.cup);
+    }
+    this.say('☕', true);
   }
 
   say(text: string, emoji: boolean) {
@@ -246,15 +261,31 @@ class Person {
       this.rig.root.rotation.y = cur + diff * Math.min(1, dt * 12);
     }
     const moving = this.server.m;
-    this.walkPhase += dt * (moving ? 10 : 0);
-    const swing = moving ? Math.sin(this.walkPhase) * 0.7 : 0;
-    if (this.rig.legL) this.rig.legL.rotation.x = swing;
-    if (this.rig.legR) this.rig.legR.rotation.x = -swing;
+    const running = moving && this.server.r;
+    this.walkPhase += dt * (moving ? (running ? 15 : 10) : 0);
+    const swing = moving ? Math.sin(this.walkPhase) * (running ? 0.95 : 0.7) : 0;
+    const seat: Seat | undefined = this.server.s != null ? SEATS[this.server.s] : undefined;
+    // 앉으면 엉덩이를 자리 높이에, 다리는 앞으로 (M11)
+    const legX = seat ? -1.45 : swing;
+    if (this.rig.legL) this.rig.legL.rotation.x = legX;
+    if (this.rig.legR) this.rig.legR.rotation.x = seat ? -1.45 : -swing;
     if (this.pumpLeft > 0) this.pumpLeft -= dt;
     const pumpArm = this.pumpLeft > 0 ? -1.2 - Math.sin(this.pumpLeft * 18) * 0.5 : null;
-    if (this.rig.armL) this.rig.armL.rotation.x = this.holding ? -2.7 : pumpArm ?? -swing * 0.8;
-    if (this.rig.armR) this.rig.armR.rotation.x = this.holding ? -2.7 : pumpArm ?? swing * 0.8;
-    this.rig.body.position.y = moving ? Math.abs(Math.sin(this.walkPhase)) * 0.08 : Math.sin(t * 2.2 + this.idlePhase) * 0.012;
+    if (this.drinkLeft > 0) {
+      this.drinkLeft -= dt;
+      if (this.drinkLeft <= 0 && this.cup) {
+        this.cup.removeFromParent();
+        this.cup.geometry.dispose();
+        this.cup = undefined;
+      }
+    }
+    const sip = this.drinkLeft > 0 ? -1.75 + Math.sin(t * 4) * 0.25 : null;
+    const rest = seat ? -0.35 : null;
+    if (this.rig.armL) this.rig.armL.rotation.x = this.holding ? -2.7 : pumpArm ?? rest ?? -swing * 0.8;
+    if (this.rig.armR) this.rig.armR.rotation.x = this.holding ? -2.7 : pumpArm ?? sip ?? rest ?? swing * 0.8;
+    this.rig.body.position.y = seat ? seat.h - 0.3 : moving ? Math.abs(Math.sin(this.walkPhase)) * (running ? 0.11 : 0.08) : Math.sin(t * 2.2 + this.idlePhase) * 0.012;
+    // 달릴 때는 몸을 앞으로 살짝 기울인다
+    this.rig.body.rotation.x = running ? 0.18 : 0;
     this.rig.tick?.(dt);
     if (this.zz) this.zz.position.y = (this.rig.height ?? 1.55) + 0.05 + Math.sin(t * 2) * 0.06;
     if (this.bubble) {
@@ -474,7 +505,7 @@ export class LoungeView {
       // 처음 보거나 멀리 순간이동했으면(투표 때 메인으로 모임 등) 걸어가지 않고 바로 그 자리에
       const far = Math.hypot(person.group.position.x - pos.x, person.group.position.z - pos.z) > 3;
       if (!person.server.known || far) person.group.position.set(pos.x, 0, pos.z);
-      Object.assign(person.server, { x: pos.x, z: pos.z, f: pos.f, m: pos.m, known: true });
+      Object.assign(person.server, { x: pos.x, z: pos.z, f: pos.f, m: pos.m, known: true, s: pos.s ?? null, r: !!pos.r });
     }
   }
 
@@ -541,6 +572,34 @@ export class LoungeView {
 
   /** 지금 부스 위에 서 있는 인원 (화면 표시용. 실제 집계는 서버가 한다) */
   /** 내가 서 있는 부스 (없으면 null) */
+  /** 누군가 커피를 마심 */
+  drink(playerId: string) {
+    this.people.get(playerId)?.drink();
+  }
+
+  /**
+   * Space·버튼으로 할 수 있는 일 (M11): 앉아 있으면 일어나기, 커피 머신 앞이면 커피, 가까운 빈자리에 앉기.
+   * @return 없으면 null
+   */
+  interaction(): { kind: 'stand' } | { kind: 'coffee' } | { kind: 'sit'; seat: Seat } | null {
+    const mine = this.people.get(this.meId ?? '');
+    if (!mine) return null;
+    if (mine.server.s != null) return { kind: 'stand' };
+    const { x, z } = mine.server;
+    if (Math.hypot(x - COFFEE_SPOT.x, z - COFFEE_SPOT.z) <= COFFEE_SPOT.r - 0.1) return { kind: 'coffee' };
+    const taken = new Set([...this.people.values()].map((p) => p.server.s).filter((v): v is number => v != null));
+    let best: Seat | null = null;
+    let bd = SEAT_RANGE;
+    for (const seat of SEATS) {
+      const d = Math.hypot(x - seat.x, z - seat.z);
+      if (d < bd && !taken.has(seat.id)) {
+        bd = d;
+        best = seat;
+      }
+    }
+    return best ? { kind: 'sit', seat: best } : null;
+  }
+
   /** 내가 있는 방 */
   myRoom(): RoomId {
     return roomOf(this.me.position.x, this.me.position.z);

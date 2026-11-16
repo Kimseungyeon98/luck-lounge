@@ -535,3 +535,25 @@ input.code-input.bad { border-color: var(--error); }
 .copy-status:empty { display: none; }
 .room-code { font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace; letter-spacing: 0.06em; }
 .home .card .hint { display: block; }
+
+/* ---------- M11: 상호작용·달리기 버튼 (오른쪽 아래) ---------- */
+.round-btns {
+  position: absolute; right: max(14px, env(safe-area-inset-right)); bottom: calc(max(16px, env(safe-area-inset-bottom)) + 232px);
+  display: flex; flex-direction: column; align-items: flex-end; gap: 10px; pointer-events: none; z-index: 3;
+}
+.round-btns > * { pointer-events: auto; }
+.round-btn {
+  font: inherit; font-size: 15px; font-weight: 800; border: 0; border-radius: 999px; min-width: 64px; min-height: 64px; padding: 0 16px;
+  background: rgba(255, 255, 255, 0.96); color: var(--ink); box-shadow: 0 4px 14px rgba(24, 32, 43, 0.22); cursor: pointer;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; line-height: 1.15;
+  touch-action: none; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none;
+}
+.round-btn small { font-size: 11px; font-weight: 700; }
+.round-btn.act { background: var(--accent); color: var(--accent-ink); flex-direction: row; gap: 6px; }
+.round-btn.act kbd { font-family: ui-monospace, Menlo, monospace; font-size: 11px; background: #ffffff; color: var(--ink); border-radius: 4px; padding: 1px 5px; }
+.round-btn.run[aria-pressed="true"] { background: var(--focus); color: #ffffff; }
+.round-btn:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+@media (orientation: landscape) and (max-height: 520px) {
+  .round-btns { bottom: calc(max(12px, env(safe-area-inset-bottom)) + 70px); }
+}
+body.voting .round-btns { bottom: calc(max(16px, env(safe-area-inset-bottom)) + 104px); }

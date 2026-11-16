@@ -65,6 +65,11 @@ export function showLobbyHud(root: HTMLElement, team: Team, myId: string, action
   const hint = h('p', { className: 'hud-hint' });
   const status = h('p', { className: 'hud-status', role: 'status' });
   const slot = h('div', { className: 'hud-slot' });
+  // M11: 오른쪽 아래 둥근 버튼 — 앉기·커피(상호작용), 달리기(휴대폰, 누르고 있는 동안)
+  const actBtn = h('button', { type: 'button', className: 'round-btn act', hidden: true });
+  const runBtn = h('button', { type: 'button', className: 'round-btn run', ariaLabel: '달리기 (누르고 있는 동안)', hidden: !matchMedia('(pointer: coarse)').matches }, ['🏃', h('small', {}, ['달리기'])]);
+  runBtn.setAttribute('aria-pressed', 'false');
+  const roundBtns = h('div', { className: 'round-btns' }, [actBtn, runBtn]);
   const startBtn = h('button', { type: 'button', className: 'start-btn', hidden: true }, ['🎲 게임 시작']);
   const chatOpen = h('button', { type: 'button', className: 'pill wide' }, ['💬 말하기']);
   const emoteBtns = EMOTES.map((e) => {
@@ -162,7 +167,11 @@ export function showLobbyHud(root: HTMLElement, team: Team, myId: string, action
       rule('메인 대기실', '게임 부스 6개가 있는 곳'),
       rule('☕ 탕비실', '왼쪽 뒤. 오늘의 커피 당첨자 보드, 커피 머신 앞에서 커피 한 잔'),
       rule('📋 회의실', '오른쪽 앞. 화이트보드를 누르면 통계·최고 기록')]),
-    h('p', { className: 'sheet-note' }, ['PC에서는 W A S D 또는 방향키로도 걸을 수 있어요.']),
+    h('div', { className: 'help-zone' }, [h('b', {}, ['조작']),
+      rule('걷기', 'PC는 W A S D 또는 방향키, 휴대폰은 조이스틱(또는 바닥 누르기)'),
+      rule('달리기', 'PC는 Shift, 휴대폰은 오른쪽 아래 🏃 버튼을 누르고 있는 동안'),
+      rule('말하기', 'PC는 Enter로 열고 Enter로 보내기, Esc로 닫기'),
+      rule('앉기·커피', '소파·의자·빈백 가까이에서 Space(휴대폰은 버튼). 움직이면 일어나요. 커피 머신 앞에서는 커피 한 잔')]),
     h('button', { type: 'button', className: 'sheet-close guide-again' }, ['처음 안내 다시 보기']),
     h('button', { type: 'button', className: 'sheet-close' }, ['닫기']),
   ]);
@@ -183,6 +192,7 @@ export function showLobbyHud(root: HTMLElement, team: Team, myId: string, action
     conn,
     toast,
     h('div', { className: 'hud-bottom' }, [hint, slot, status, startBtn, actionRow, chatBar]),
+    roundBtns,
     settings,
     startSheet,
     hostSheet,
@@ -198,7 +208,7 @@ export function showLobbyHud(root: HTMLElement, team: Team, myId: string, action
     tapBtn.setAttribute('aria-pressed', String(m === 'tap'));
     stickBtn.setAttribute('aria-pressed', String(m === 'stick'));
     // PC(마우스)면 키보드 이동도 알려 준다 (M10)
-    const keys = matchMedia('(pointer: fine)').matches ? ' · 키보드는 W A S D' : '';
+    const keys = matchMedia('(pointer: fine)').matches ? ' · 키보드 WASD · Shift 달리기 · Enter 말하기' : ' · 달리기는 오른쪽 아래 버튼';
     hint.textContent = (m === 'tap' ? '바닥을 누르면 그쪽으로 걸어가요' : '화면을 누른 채 끌면 그 방향으로 걸어요') + keys;
     hint.hidden = false;
     if (save) saveMoveMode(m);
@@ -274,10 +284,20 @@ export function showLobbyHud(root: HTMLElement, team: Team, myId: string, action
     counter.textContent = '0/40';
     input.blur();
   };
-  chatOpen.addEventListener('click', () => {
+  const openChat = () => {
+    if (!chatBar.hidden) return;
     actionRow.hidden = true;
     chatBar.hidden = false;
     input.focus();
+  };
+  chatOpen.addEventListener('click', openChat);
+  // Esc 로 닫기 (Enter 는 보내기, 비어 있으면 그냥 닫힘)
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      e.stopPropagation();
+      closeChatBar();
+    }
   });
   closeChat.addEventListener('click', closeChatBar);
   input.addEventListener('input', () => { counter.textContent = `${Array.from(input.value).length}/40`; });
@@ -353,6 +373,12 @@ export function showLobbyHud(root: HTMLElement, team: Team, myId: string, action
     get moveMode() {
       return moveMode;
     },
+    /** Enter 키로 말풍선 입력 열기 (M11) */
+    openChat,
+    /** 상호작용 버튼 (앉기·일어나기·커피). PC 는 Space 안내도 같이 */
+    actButton: actBtn,
+    /** 휴대폰 달리기 버튼 */
+    runButton: runBtn,
     setPresence(list: Member[], newHost: string | null) {
       members = list;
       count.textContent = `${team.code} · 접속 ${list.length}명 ▾`;

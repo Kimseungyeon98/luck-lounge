@@ -4,8 +4,9 @@ export type ConnectionState = 'connecting' | 'online' | 'reconnecting' | 'reject
 
 export interface Member { playerId: string; nickname: string; characterIndex: number; away: boolean }
 export interface Presence { players: Member[]; hostId: string | null }
-export interface Position { id: string; x: number; z: number; f: number; m: boolean }
-export interface LobbyEvent { type: 'chat' | 'emote' | 'host'; playerId: string; text: string }
+/** s: 앉은 자리 번호(없으면 null), r: 달리는 중 (M11) */
+export interface Position { id: string; x: number; z: number; f: number; m: boolean; s?: number | null; r?: boolean }
+export interface LobbyEvent { type: 'chat' | 'emote' | 'host' | 'drink'; playerId: string; text: string }
 export interface BombMessage {
   type: 'start' | 'holder' | 'explode' | 'finish';
   order: string[] | null;
@@ -109,8 +110,11 @@ export interface LoungeSocketHandlers {
 }
 
 export interface LoungeSocket {
-  moveTo(x: number, z: number): void;
-  steer(dx: number, dz: number): void;
+  moveTo(x: number, z: number, run?: boolean): void;
+  steer(dx: number, dz: number, run?: boolean): void;
+  sit(seat: number): void;
+  stand(): void;
+  drink(): void;
   chat(text: string): void;
   emote(emoji: string): void;
   away(away: boolean): void;
@@ -176,8 +180,11 @@ export function connectLounge(slug: string, token: string, h: LoungeSocketHandle
   client.activate();
 
   return {
-    moveTo: (x, z) => send('move', { tx: x, tz: z }),
-    steer: (dx, dz) => send('move', { dx, dz }),
+    moveTo: (x, z, run = false) => send('move', { tx: x, tz: z, run }),
+    steer: (dx, dz, run = false) => send('move', { dx, dz, run }),
+    sit: (seat) => send('sit', { seat }),
+    stand: () => send('stand', {}),
+    drink: () => send('drink', {}),
     chat: (text) => send('chat', { text }),
     emote: (emoji) => send('emote', { emoji }),
     away: (away) => send('away', { away }),
