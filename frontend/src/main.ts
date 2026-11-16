@@ -11,7 +11,7 @@ import { createSkillHud } from './skillHud';
 import { createLadderHud } from './ladderHud';
 import { formatScore } from './skill/games';
 import { closeSheet } from './sheets';
-import { boothAt } from './three/lounge';
+import { BOOTHS, COFFEE_SPOT, ROOM_NAMES, boothAt, roomOf, type RoomId } from './three/lounge';
 import { connectLounge } from './net/loungeSocket';
 import { unlockAudio } from './sound';
 import { clearToken, loadCurrentRoom, saveCurrentRoom, saveLastRoom } from './storage';
@@ -89,6 +89,37 @@ async function boot() {
     practice: (type, score, extra) => socket?.practice(type, score, extra),
   });
   hud.slot.append(skillHud.practiceButton);
+
+  // ---------- M10: 방 세 개 ----------
+  let gameRunning = false;
+  // 탕비실 커피 머신 앞: 커피 한 잔 (☕ 이모티콘)
+  const coffeeBtn = document.createElement('button');
+  coffeeBtn.type = 'button';
+  coffeeBtn.className = 'practice-btn coffee-btn';
+  coffeeBtn.textContent = '☕ 커피 한 잔';
+  coffeeBtn.hidden = true;
+  coffeeBtn.addEventListener('click', () => socket?.emote('☕'));
+  hud.slot.append(coffeeBtn);
+  // 방에 들어가면 이름을 잠깐 보여 준다
+  let myRoom: RoomId | null = null;
+  const ROOM_TIP: Record<RoomId, string> = {
+    MAIN: '게임 부스 6개',
+    PANTRY: '오늘의 커피 당첨자 보드 · 커피 머신 앞에서 한 잔',
+    MEETING: '화이트보드를 누르면 통계·최고 기록',
+  };
+  // 탕비실 보드: 오늘의 커피 당첨자
+  const GAME_NAME = Object.fromEntries(BOOTHS.map((b) => [b.id, b.name])) as Record<string, string>;
+  const refreshWinners = async () => {
+    try {
+      const res = await fetch(`/api/teams/${encodeURIComponent(team.slug)}/today`);
+      if (!res.ok) return;
+      const list = (await res.json()) as { nickname: string; gameType: string }[];
+      view?.setWinners(list.map((w, i) => `${i + 1}. ${w.nickname} · ${GAME_NAME[w.gameType] ?? ''}`));
+    } catch {
+      // 다음 내기가 끝날 때 다시 시도
+    }
+  };
+  void refreshWinners();
   const ladderHud = createLadderHud(app, me.playerId, nameOf, (c) => socket?.pickLadder(c));
 
   socket = connectLounge(team.slug, me.token, {
@@ -107,6 +138,12 @@ async function boot() {
       if (mine) {
         const b = boothAt(mine.x, mine.z);
         skillHud.setBooth(b === 'STOP' || b === 'TOWER' || b === 'TARGET' ? b : null);
+        coffeeBtn.hidden = gameRunning || Math.hypot(mine.x - COFFEE_SPOT.x, mine.z - COFFEE_SPOT.z) > COFFEE_SPOT.r;
+        const room = roomOf(mine.x, mine.z);
+        if (room !== myRoom) {
+          if (myRoom !== null && !gameRunning) hud.toast(`${ROOM_NAMES[room]} · ${ROOM_TIP[room]}`);
+          myRoom = room;
+        }
       }
     },
     onEvent: (e) => {
@@ -131,7 +168,7 @@ async function boot() {
     },
     onMatch: (m) => {
       if (m.type === 'vote') closeSheet();
-      matchHud.handle(m, (running) => { hud.setGameRunning(running); skillHud.setRunning(running); });
+      matchHud.handle(m, (running) => { gameRunning = running; if (running) coffeeBtn.hidden = true; hud.setGameRunning(running); skillHud.setRunning(running); });
       if (m.type === 'voteResult') skillHud.setWinnersTarget(m.winnersTarget ?? 1);
       if (m.type === 'roundEnd' && m.gameType === 'LADDER') ladderHud.roundEnd();
       else if (m.type === 'roundEnd' && m.gameType !== 'STOP' && m.gameType !== 'TOWER' && m.gameType !== 'TARGET') {
@@ -144,6 +181,7 @@ async function boot() {
         }
       }
       if (m.type === 'finish') {
+        window.setTimeout(() => void refreshWinners(), 800);
         bombHud.finish();
         balloonHud.finish();
         skillHud.finish();

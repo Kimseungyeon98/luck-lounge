@@ -32,6 +32,10 @@ public class StatsService {
     public record GameBest(String gameType, boolean lowerBetter, GameRecords.Best team, GameRecords.Best mine) {
     }
 
+    /** 오늘(한국 날짜) 커피 당첨 한 건. 탕비실 "오늘의 커피 당첨자" 보드 (M10) */
+    public record TodayWinner(UUID playerId, String nickname, int characterIndex, String gameType) {
+    }
+
     /** 경쟁 존 게임과 점수 방향 (lobby.SkillGame.Kind 와 같게) */
     private static final java.util.Map<String, Boolean> SKILL_GAMES = new java.util.LinkedHashMap<>();
 
@@ -59,6 +63,26 @@ public class StatsService {
             GameRecords.Bests b = records.bests(slug, e.getKey(), e.getValue(), playerId);
             return new GameBest(e.getKey(), e.getValue(), b.team(), b.mine());
         }).toList();
+    }
+
+    /** 오늘 내기(연습판 제외)의 당첨자, 당첨된 순서대로 */
+    @Transactional(readOnly = true)
+    public List<TodayWinner> today(String slug) {
+        long teamId = jdbc.sql("select id from team where slug = :slug").param("slug", slug).query(Long.class)
+                .optional().orElseThrow(() -> new NotFoundException("없는 방이에요. 방 코드를 다시 확인해 주세요."));
+        LocalDate today = LocalDate.now(clock.withZone(GameRecords.KOREA));
+        return jdbc.sql("""
+                        select p.id, p.nickname, p.character_index, s.game_type
+                        from game_round r
+                        join game_session s on s.id = r.session_id
+                        join player p on p.id = r.loser_id
+                        where s.team_id = :team and not s.practice and s.play_date = :today
+                        order by r.ended_at
+                        """)
+                .param("team", teamId).param("today", today)
+                .query((rs, n) -> new TodayWinner(rs.getObject("id", UUID.class), rs.getString("nickname"),
+                        rs.getInt("character_index"), rs.getString("game_type")))
+                .list();
     }
 
     @Transactional(readOnly = true)

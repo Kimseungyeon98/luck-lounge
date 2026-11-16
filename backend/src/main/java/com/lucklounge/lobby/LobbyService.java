@@ -35,7 +35,7 @@ public class LobbyService implements SmartLifecycle {
 
     private static final Logger log = LoggerFactory.getLogger(LobbyService.class);
     static final long TICK_MS = 100;
-    static final Set<String> EMOTES = Set.of("👋", "😂", "🔥", "🙏", "😴", "👏");
+    static final Set<String> EMOTES = Set.of("👋", "😂", "🔥", "🙏", "😴", "👏", "☕");
 
     public record PositionsMessage(java.util.List<LobbyRoom.PositionView> players) {
     }

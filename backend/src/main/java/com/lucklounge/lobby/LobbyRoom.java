@@ -26,7 +26,7 @@ public class LobbyRoom {
     static final Duration HOST_GRACE = Duration.ofSeconds(10);
     static final Duration CHAT_INTERVAL = Duration.ofMillis(1000);
     static final double SPAWN_X = 0.0;
-    static final double SPAWN_Z = 4.4;
+    static final double SPAWN_Z = 5.4;
 
     /** 대기실의 한 사람 */
     static final class Member {
@@ -40,6 +40,8 @@ public class LobbyRoom {
         Double targetZ;
         double dirX;
         double dirZ;
+        /** 탭 이동으로 다른 방에 갈 때 지날 점들 (문) */
+        final java.util.ArrayDeque<double[]> route = new java.util.ArrayDeque<>();
         boolean moving;
         boolean away;
         long arrivalOrder;
@@ -72,7 +74,7 @@ public class LobbyRoom {
 
     /** 시한폭탄 판이 둥글게 서는 자리의 중심 (테이블·부스와 겹치지 않는 곳) */
     static final double BOMB_CENTER_X = 0.0;
-    static final double BOMB_CENTER_Z = 1.4;
+    static final double BOMB_CENTER_Z = 1.6;
 
     private final String teamSlug;
     private final Map<UUID, Member> members = new LinkedHashMap<>();
@@ -82,6 +84,8 @@ public class LobbyRoom {
     private Instant hostAbsentSince;
     private final Random random;
     private Match match;
+    /** 서버가 사람을 옮겼음 (투표 때 메인으로 모음, 시한폭탄 원 세우기) → 다음 틱에 위치를 꼭 보낸다 */
+    private boolean teleported;
 
     public LobbyRoom(String teamSlug) {
         this(teamSlug, new SecureRandom());
@@ -132,6 +136,7 @@ public class LobbyRoom {
         }
         m.targetX = null;
         m.targetZ = null;
+        m.route.clear();
         m.dirX = 0;
         m.dirZ = 0;
         m.moving = false;
@@ -151,8 +156,12 @@ public class LobbyRoom {
         if (m == null || locked(playerId) || !Double.isFinite(tx) || !Double.isFinite(tz)) {
             return;
         }
-        m.targetX = clamp(tx, Obstacles.MIN_X, Obstacles.MAX_X);
-        m.targetZ = clamp(tz, Obstacles.MIN_Z, Obstacles.MAX_Z);
+        // 다른 방이면 문을 거쳐서 (M10)
+        m.route.clear();
+        m.route.addAll(Obstacles.route(m.x, m.z, clamp(tx, Obstacles.MIN_X, Obstacles.MAX_X), clamp(tz, Obstacles.MIN_Z, Obstacles.MAX_Z)));
+        double[] first = m.route.poll();
+        m.targetX = first[0];
+        m.targetZ = first[1];
         m.dirX = 0;
         m.dirZ = 0;
     }
@@ -172,6 +181,7 @@ public class LobbyRoom {
         m.dirZ = dz;
         m.targetX = null;
         m.targetZ = null;
+        m.route.clear();
     }
 
     /** @return 바뀌었으면 true */
@@ -232,6 +242,10 @@ public class LobbyRoom {
                 match = null;
             }
         }
+        if (teleported) {
+            moved = true;
+            teleported = false;
+        }
         boolean presence = false;
         if (hostId != null && hostAbsentSince != null
                 && Duration.between(hostAbsentSince, now).compareTo(HOST_GRACE) >= 0) {
@@ -262,6 +276,7 @@ public class LobbyRoom {
             return StartFailure.NOT_ENOUGH_PLAYERS;
         }
         match = new Match(Math.max(1, winnersTarget), practice, now, random);
+        gatherToMain();
         return match.started();
     }
 
@@ -327,6 +342,27 @@ public class LobbyRoom {
         return Optional.of(new Match.VoteStarted(left, match.winnersTarget(), match.practice()));
     }
 
+    /** 투표가 시작되면 탕비실·회의실에 있던 사람은 메인 대기실 가운데로 (M10 R5) */
+    private void gatherToMain() {
+        int i = 0;
+        for (Member m : members.values()) {
+            if (!m.online() || Obstacles.roomOf(m.x, m.z) == Obstacles.Room.MAIN) {
+                continue;
+            }
+            double[] p = Obstacles.gatherSpot(i++);
+            m.x = p[0];
+            m.z = p[1];
+            m.face = 0;
+            m.targetX = null;
+            m.targetZ = null;
+            m.route.clear();
+            m.dirX = 0;
+            m.dirZ = 0;
+            m.moving = false;
+            teleported = true;
+        }
+    }
+
     private boolean locked(UUID id) {
         return match != null && match.locks(id);
     }
@@ -385,6 +421,7 @@ public class LobbyRoom {
             m.dirZ = 0;
             m.moving = false;
         }
+        teleported = true;
     }
 
     private boolean step(Member m, double dt) {
@@ -404,6 +441,12 @@ public class LobbyRoom {
             dz = m.targetZ - m.z;
             double d = Math.hypot(dx, dz);
             if (d < 0.05) {
+                double[] next = m.route.poll();
+                if (next != null) {
+                    m.targetX = next[0];
+                    m.targetZ = next[1];
+                    return true;
+                }
                 m.targetX = null;
                 m.targetZ = null;
                 return false;
@@ -416,10 +459,14 @@ public class LobbyRoom {
         }
         double nx = m.x + dx * speed * dt;
         double nz = m.z + dz * speed * dt;
-        // 장애물에 막히면 벽을 따라 미끄러진다
-        if (!Obstacles.blocked(nx, nz)) {
+        // 장애물에 막히면 비스듬히 돌아가거나(둥근 부스 받침·화분) 벽을 따라 미끄러진다
+        double[] around = Obstacles.blocked(nx, nz) ? detour(m, dx, dz, speed * dt) : null;
+        if (around == null && !Obstacles.blocked(nx, nz)) {
             m.x = nx;
             m.z = nz;
+        } else if (around != null) {
+            m.x = around[0];
+            m.z = around[1];
         } else if (!Obstacles.blocked(nx, m.z)) {
             m.x = nx;
         } else if (!Obstacles.blocked(m.x, nz)) {
@@ -427,11 +474,28 @@ public class LobbyRoom {
         } else {
             m.targetX = null;
             m.targetZ = null;
+            m.route.clear();
             return false;
         }
         m.face = Math.atan2(dx, dz);
         m.away = false;
         return true;
+    }
+
+    /** 막힌 방향에서 조금씩 틀어 보며 갈 수 있는 첫 자리 (0.5 → 1.5 라디안, 양쪽). 없으면 null */
+    private static double[] detour(Member m, double dx, double dz, double len) {
+        for (double a : new double[] {0.5, -0.5, 0.9, -0.9, 1.3, -1.3}) {
+            double c = Math.cos(a);
+            double sn = Math.sin(a);
+            double ux = dx * c - dz * sn;
+            double uz = dx * sn + dz * c;
+            double x = m.x + ux * len;
+            double z = m.z + uz * len;
+            if (!Obstacles.blocked(x, z)) {
+                return new double[] {x, z};
+            }
+        }
+        return null;
     }
 
     private UUID nextHost() {
