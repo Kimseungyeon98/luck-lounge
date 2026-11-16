@@ -65,6 +65,26 @@ class StatsServiceTest {
     }
 
     @Test
+    void 오늘의_커피_당첨자는_오늘_내기만_당첨된_순서대로() {
+        Instant now = Instant.now();
+        List<UUID> all = List.of(kim, park, lee);
+        play(now.minusSeconds(86_400 * 2), false, kim, all);   // 이틀 전
+        play(now.minusSeconds(120), false, park, all);
+        play(now.minusSeconds(60), false, lee, all);
+        play(now.minusSeconds(30), true, kim, all);           // 연습판
+        // 자정 직후 두 시간 안이면 "120초 전"이 어제일 수 있어 날짜로 걸러 본다
+        LocalDate today = LocalDate.now(ZoneId.of("Asia/Seoul"));
+        long expected = java.util.stream.Stream.of(now.minusSeconds(120), now.minusSeconds(60))
+                .filter(i -> LocalDate.ofInstant(i, ZoneId.of("Asia/Seoul")).equals(today)).count();
+        List<StatsService.TodayWinner> w = stats.today(slug);
+        assertThat(w).hasSize((int) expected);
+        if (expected == 2) {
+            assertThat(w).extracting(StatsService.TodayWinner::nickname).containsExactly("박과장", "이팀장");
+            assertThat(w.getFirst().gameType()).isEqualTo("BOMB");
+        }
+    }
+
+    @Test
     void 당첨_많은_순이고_참여는_하루_한_번_연습판은_제외() {
         List<UUID> all = List.of(kim, park, lee);
         play(thisMonth(1), false, park, all);

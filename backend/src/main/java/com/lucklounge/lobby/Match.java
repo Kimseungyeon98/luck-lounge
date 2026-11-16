@@ -37,8 +37,9 @@ final class Match {
      * 이름이 곧 게임 종류(gameType)다.
      */
     enum Booth {
-        LADDER(-4.8, -2.1, false), BOMB(-4.8, 0.9, false), BALLOON(-4.8, 3.9, false),
-        TARGET(4.8, -2.1, true), STOP(4.8, 0.9, true), TOWER(4.8, 3.9, true);
+        // M10: 메인 대기실이 1.6배라 부스도 넓게
+        LADDER(-7.6, -3.2, false), BOMB(-7.6, 0.8, false), BALLOON(-7.6, 4.8, false),
+        TARGET(7.6, -3.2, true), STOP(7.6, 0.8, true), TOWER(7.6, 4.8, true);
 
         static final double RADIUS = 1.45;
 

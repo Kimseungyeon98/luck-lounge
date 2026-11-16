@@ -82,14 +82,14 @@ class LobbyRoomTest {
     @Test
     void 장애물을_통과하지_못한다() {
         room.join("s1", kim, "김대리", 0);
-        // 테이블(-0.4, -2.4) 한가운데로 가려고 해도 테이블 밖에 멈춘다
-        room.moveTo(kim, -0.4, -2.4);
+        // 커피 테이블(0, -3.2) 한가운데로 가려고 해도 테이블 밖에 멈춘다
+        room.moveTo(kim, 0.0, -3.2);
         for (int i = 0; i < 100; i++) {
             room.tick(0.1, t0);
         }
         LobbyRoom.PositionView p = room.positions().getFirst();
         assertThat(Obstacles.blocked(p.x(), p.z())).isFalse();
-        assertThat(Math.hypot(p.x() + 0.4, p.z() + 2.4)).isGreaterThanOrEqualTo(0.94);
+        assertThat(Math.hypot(p.x(), p.z() + 3.2)).isGreaterThanOrEqualTo(0.79);
     }
 
     @Test
@@ -120,6 +120,80 @@ class LobbyRoomTest {
         room.moveTo(kim, 1, 4.4);
         room.tick(0.1, t0);
         assertThat(room.presence().players().getFirst().away()).isFalse();
+    }
+
+    // ---------- M10: 방 세 개 ----------
+
+    @Test
+    void 탭으로_다른_방을_누르면_문을_지나서_간다() {
+        room.join("s1", kim, "김대리", 0);
+        room.moveTo(kim, -15.0, -3.0);   // 탕비실 (왼쪽 뒤)
+        for (int i = 0; i < 200; i++) {
+            room.tick(0.1, t0);
+        }
+        LobbyRoom.PositionView p = room.positions().getFirst();
+        assertThat(Obstacles.roomOf(p.x(), p.z())).isEqualTo(Obstacles.Room.PANTRY);
+        assertThat(p.x()).isCloseTo(-15.0, org.assertj.core.data.Offset.offset(0.01));
+        assertThat(p.z()).isCloseTo(-3.0, org.assertj.core.data.Offset.offset(0.01));
+
+        room.moveTo(kim, 15.0, 6.6);     // 회의실 (오른쪽 앞): 메인을 거쳐 간다
+        for (int i = 0; i < 300; i++) {
+            room.tick(0.1, t0);
+        }
+        p = room.positions().getFirst();
+        assertThat(Obstacles.roomOf(p.x(), p.z())).isEqualTo(Obstacles.Room.MEETING);
+        assertThat(p.x()).isCloseTo(15.0, org.assertj.core.data.Offset.offset(0.01));
+    }
+
+    @Test
+    void 입구에서_회의실로_가도_탑_쌓기_부스_받침에_걸리지_않는다() {
+        room.join("s1", kim, "김대리", 0);   // 입구 (0, 5.4) 근처
+        room.moveTo(kim, 15.0, 6.0);
+        for (int i = 0; i < 200; i++) {
+            room.tick(0.1, t0);
+        }
+        LobbyRoom.PositionView p = room.positions().getFirst();
+        assertThat(Obstacles.roomOf(p.x(), p.z())).isEqualTo(Obstacles.Room.MEETING);
+        assertThat(Math.hypot(p.x() - 15.0, p.z() - 6.0)).isLessThan(0.05);
+    }
+
+    @Test
+    void 벽은_못_지나가고_문으로만_지나간다() {
+        // 탕비실과 메인 사이 벽(x -11.4) : 문(z -3.6 ~ -1.4) 밖은 막힘
+        assertThat(Obstacles.blocked(-11.4, -0.5)).isTrue();
+        assertThat(Obstacles.blocked(-11.4, -2.5)).isFalse();
+        // 메인과 회의실 사이 문(z 3.0 ~ 5.2)
+        assertThat(Obstacles.blocked(11.4, 1.5)).isTrue();
+        assertThat(Obstacles.blocked(11.4, 4.1)).isFalse();
+        // 탕비실 앞(z > 1.2)과 회의실 뒤(z < 0.4)는 방 밖
+        assertThat(Obstacles.blocked(-15.0, 3.0)).isTrue();
+        assertThat(Obstacles.blocked(15.0, -2.0)).isTrue();
+        // 부스 위(받침 앞)는 걸을 수 있다
+        for (Match.Booth b : Match.Booth.values()) {
+            assertThat(Obstacles.blocked(b.x, b.z + 0.9)).as(b.name()).isFalse();
+        }
+    }
+
+    @Test
+    void 투표가_시작되면_다른_방에_있던_사람은_메인_가운데로_모인다() {
+        room.join("s1", kim, "김대리", 0);
+        room.join("s2", park, "박과장", 1);
+        standAt(room, park, -15.0, -3.0);   // 탕비실
+        assertThat(Obstacles.roomOf(pos(park).x(), pos(park).z())).isEqualTo(Obstacles.Room.PANTRY);
+        var kimBefore = pos(kim);
+        room.startMatch(kim, 1, false, t0);
+        LobbyRoom.PositionView p = pos(park);
+        assertThat(Obstacles.roomOf(p.x(), p.z())).isEqualTo(Obstacles.Room.MAIN);
+        assertThat(Obstacles.blocked(p.x(), p.z())).isFalse();
+        assertThat(Math.hypot(p.x(), p.z() - 1.6)).isLessThan(3.5);
+        // 메인에 있던 사람은 그대로
+        assertThat(pos(kim).x()).isEqualTo(kimBefore.x());
+        // 서 있던 사람을 옮겼어도 다음 틱에 위치를 보낸다 (휴대폰 화면이 따라오게)
+        assertThat(room.tick(0.1, t0.plusMillis(100)).positionsChanged()).isTrue();
+    }
+
+    LobbyRoom.PositionView pos(UUID id) {
+        return room.positions().stream().filter(p -> p.id().equals(id)).findFirst().orElseThrow();
     }
 
     // ---------- 내기: 투표 → 연속 판 ----------
@@ -156,8 +230,8 @@ class LobbyRoomTest {
         r.join("s1", kim, "김대리", 0);
         r.join("s2", park, "박과장", 1);
         r.join("s3", lee, "이팀장", 2);
-        standAt(r, kim, -4.8, 1.8);   // 시한폭탄 부스 (받침 앞쪽)
-        standAt(r, park, -3.5, 1.1);  // 시한폭탄 부스 가장자리
+        standAt(r, kim, -7.6, 1.7);   // 시한폭탄 부스 (받침 앞쪽)
+        standAt(r, park, -6.3, 1.1);  // 시한폭탄 부스 가장자리
         standAt(r, lee, 0.0, 0.0);    // 부스 밖 → 기권
         r.startMatch(kim, 1, false, t0);
 
@@ -175,7 +249,7 @@ class LobbyRoomTest {
     void 풍선이_이기면_풍선_불기로_진행한다() {
         room.join("s1", kim, "김대리", 0);
         room.join("s2", park, "박과장", 1);
-        standAt(room, kim, -4.8, 4.8);
+        standAt(room, kim, -7.6, 5.7);
         room.startMatch(kim, 1, false, t0);
         List<Match.Event> events = run(room, 1, 20);
         Match.VoteEnded vote = (Match.VoteEnded) events.stream().filter(e -> e instanceof Match.VoteEnded).findFirst().orElseThrow();
@@ -190,7 +264,7 @@ class LobbyRoomTest {
         room.join("s1", kim, "김대리", 0);
         room.join("s2", park, "박과장", 1);
         room.join("s3", lee, "이팀장", 2);
-        standAt(room, kim, -3.5, 1.1);  // 시한폭탄 한 표 (투표 없으면 무작위라 풍선이 될 수 있음)
+        standAt(room, kim, -6.3, 1.1);  // 시한폭탄 한 표 (투표 없으면 무작위라 풍선이 될 수 있음)
         room.startMatch(kim, 2, false, t0);
         List<Match.Event> events = run(room, 1, 200);
 
@@ -240,7 +314,7 @@ class LobbyRoomTest {
         room.join("s1", kim, "김대리", 0);
         room.join("s2", park, "박과장", 1);
         room.join("s3", lee, "이팀장", 2);
-        standAt(room, kim, -4.8, 4.8);
+        standAt(room, kim, -7.6, 5.7);
         room.startMatch(kim, 2, false, t0);
         // 아무도 펌프질하지 않아도 7초마다 1번 자동이므로 한계(최대 30)를 넘겨 끝난다
         List<Match.Event> events = run(room, 1, 600);
@@ -258,7 +332,7 @@ class LobbyRoomTest {
         room.join("s1", kim, "김대리", 0);
         room.join("s2", park, "박과장", 1);
         room.join("s3", lee, "이팀장", 2);
-        standAt(room, kim, 4.8, 1.8);   // 10초 멈추기 부스
+        standAt(room, kim, 7.6, 1.7);   // 10초 멈추기 부스
         room.startMatch(kim, 2, false, t0);
         List<Match.Event> events = run(room, 1, 14);
         Match.VoteEnded vote = (Match.VoteEnded) events.stream().filter(e -> e instanceof Match.VoteEnded).findFirst().orElseThrow();
@@ -283,7 +357,7 @@ class LobbyRoomTest {
         room.join("s1", kim, "김대리", 0);
         room.join("s2", park, "박과장", 1);
         assertThat(room.canPractice(kim, "TOWER")).isFalse();
-        standAt(room, kim, 4.8, 4.8);   // 탑 쌓기 부스
+        standAt(room, kim, 7.6, 5.7);   // 탑 쌓기 부스
         assertThat(room.canPractice(kim, "TOWER")).isTrue();
         assertThat(room.canPractice(kim, "STOP")).isFalse();
         assertThat(room.canPractice(kim, "BOMB")).isFalse();
@@ -295,7 +369,7 @@ class LobbyRoomTest {
     void 사다리_타기는_모두_고르면_공개하고_따라_내려간_시간_뒤에_판이_끝난다() {
         room.join("s1", kim, "김대리", 0);
         room.join("s2", park, "박과장", 1);
-        standAt(room, kim, -4.8, -1.2);   // 사다리 타기 부스
+        standAt(room, kim, -7.6, -2.3);   // 사다리 타기 부스
         room.startMatch(kim, 1, false, t0);
         List<Match.Event> events = run(room, 1, 14);
         assertThat(events).anyMatch(e -> e instanceof Match.RoundStarted r && r.start() instanceof LadderGame.Started);

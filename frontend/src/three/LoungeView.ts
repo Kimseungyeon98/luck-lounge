@@ -2,9 +2,16 @@ import * as THREE from 'three';
 import type { Member, Position } from '../net/loungeSocket';
 import { createCharacter, type CharacterRig, type Face } from './characters3d';
 import { chatBubble, disposeSprite, iconSprite, nameLabel } from './labels';
-import { blocked, boothAt, buildLounge, type GameType, type Lounge } from './lounge';
+import { BOOTHS, blocked, boothAt, buildLounge, roomOf, walkBounds, type GameType, type Lounge, type RoomId } from './lounge';
 
 type Mode = 'preview' | 'lobby';
+
+/** 투표 화면: 부스 6개의 가운데와 화면 가로 폭 (카메라가 오른쪽 앞 대각선이라 화면 가로 = (x - z)/√2) */
+const VOTE_CENTER = { x: BOOTHS.reduce((a, b) => a + b.x, 0) / BOOTHS.length, z: BOOTHS.reduce((a, b) => a + b.z, 0) / BOOTHS.length + 0.2 };
+const VOTE_SPAN = (() => {
+  const sx = BOOTHS.map((b) => (b.x - b.z) / Math.SQRT2);
+  return Math.max(...sx) - Math.min(...sx) + 2 * 1.45 + 0.8;
+})();
 
 interface BombState { order: string[]; holder: string | null; center: THREE.Vector3; loser: string | null }
 
@@ -304,6 +311,7 @@ export class LoungeView {
   private readonly spark: THREE.Mesh;
   private readonly puffs: { mesh: THREE.Mesh; v: THREE.Vector3; life: number }[] = [];
   private shake = 0;
+  private readonly sun = new THREE.DirectionalLight(0xfff4e6, 1.9);
 
   /** 화면 오른쪽·아래 방향이 바닥에서 어느 쪽인지 (조이스틱 방향 변환용) */
   readonly screenRight = new THREE.Vector3(1, 0, -1).normalize();
@@ -318,13 +326,14 @@ export class LoungeView {
 
     this.scene.background = new THREE.Color(0xf2eee8);
     this.scene.add(new THREE.HemisphereLight(0xffffff, 0xc9bba8, 1.6));
-    const sun = new THREE.DirectionalLight(0xfff4e6, 1.9);
+    const sun = this.sun;
     sun.position.set(6, 12, 8);
     sun.castShadow = true;
     sun.shadow.mapSize.set(1024, 1024);
-    Object.assign(sun.shadow.camera, { left: -9, right: 9, top: 9, bottom: -9, near: 1, far: 40 });
+    // 라운지가 넓어져서(M10) 그림자는 카메라가 보는 곳 주변만 그린다 (매 프레임 따라감)
+    Object.assign(sun.shadow.camera, { left: -13, right: 13, top: 13, bottom: -13, near: 1, far: 50 });
     sun.shadow.bias = -0.0008;
-    this.scene.add(sun);
+    this.scene.add(sun, sun.target);
 
     this.lounge = buildLounge();
     this.scene.add(this.lounge.group);
@@ -462,7 +471,9 @@ export class LoungeView {
     for (const pos of list) {
       const person = this.people.get(pos.id);
       if (!person) continue;
-      if (!person.server.known) person.group.position.set(pos.x, 0, pos.z);
+      // 처음 보거나 멀리 순간이동했으면(투표 때 메인으로 모임 등) 걸어가지 않고 바로 그 자리에
+      const far = Math.hypot(person.group.position.x - pos.x, person.group.position.z - pos.z) > 3;
+      if (!person.server.known || far) person.group.position.set(pos.x, 0, pos.z);
       Object.assign(person.server, { x: pos.x, z: pos.z, f: pos.f, m: pos.m, known: true });
     }
   }
@@ -530,6 +541,21 @@ export class LoungeView {
 
   /** 지금 부스 위에 서 있는 인원 (화면 표시용. 실제 집계는 서버가 한다) */
   /** 내가 서 있는 부스 (없으면 null) */
+  /** 내가 있는 방 */
+  myRoom(): RoomId {
+    return roomOf(this.me.position.x, this.me.position.z);
+  }
+
+  /** 내 위치 (커피 머신 앞인지 등) */
+  myPosition(): { x: number; z: number } {
+    return { x: this.me.position.x, z: this.me.position.z };
+  }
+
+  /** 탕비실 보드에 오늘의 커피 당첨자 */
+  setWinners(lines: string[]) {
+    this.lounge.setWinners(lines);
+  }
+
   myBooth(): GameType | null {
     return boothAt(this.me.position.x, this.me.position.z);
   }
@@ -690,20 +716,25 @@ export class LoungeView {
         this.camGoal.set(mp.x, -0.35, mp.z);
       }
     } else if (this.voting) {
-      this.camGoal.set(-0.3, 0.3, 0.8);
+      // 세로 화면은 위쪽에 투표 현황이 있어 부스를 조금 아래로 내린다 (화면 위쪽 = 바닥의 -x -z 방향)
+      const up = (this.container.clientWidth || 1) < (this.container.clientHeight || 1) ? 2.4 : 0.3;
+      this.camGoal.set(VOTE_CENTER.x - up, 0.3, VOTE_CENTER.z - up);
     } else if (this.bombState || this.balloonState) {
       // 게임 중에는 둥글게 선 사람들 전체가 보이게
       const c = (this.bombState ?? this.balloonState)!.center;
       this.camGoal.set(c.x, 0.2, c.z + 0.3);
     } else {
-      this.camGoal.set(Math.max(-4.4, Math.min(4.0, mp.x - 0.5)), 0.3, Math.max(-3.2, Math.min(2.4, mp.z - 0.3)));
+      // 지금 있는 방 안에서만 따라간다 (방 밖 빈 바닥이 화면 반을 차지하지 않게)
+      const b = walkBounds(roomOf(mp.x, mp.z));
+      const clampTo = (v: number, lo: number, hi: number) => (lo > hi ? (lo + hi) / 2 : Math.max(lo, Math.min(hi, v)));
+      this.camGoal.set(clampTo(mp.x - 0.5, b.minX + 2.3, b.maxX - 2.7), 0.3, clampTo(mp.z - 0.3, b.minZ + 0.4, b.maxZ - 2.5));
     }
     // 대기실은 넓게 (M8): 예전보다 가로로 약 1.4배. 세로로 긴 휴대폰은 가로 9m는 보이게
     const cw = this.container.clientWidth || 1;
     const ch = this.container.clientHeight || 1;
     const lobbyZoom = Math.min(0.76, (this.viewHeight * (cw / ch > 1 ? 0.8 : 1) * (cw / ch)) / 9);
-    // 투표 중에는 부스 6개가 모두 보이게 (가로 약 14.5m)
-    const voteZoom = Math.min(0.55, (this.viewHeight * (cw / ch > 1 ? 0.8 : 1) * (cw / ch)) / 14.5);
+    // 투표 중에는 부스 6개가 모두 보이게 (M10: 메인 1.6배라 화면 가로로 약 20m)
+    const voteZoom = Math.min(0.5, (this.viewHeight * (cw / ch > 1 ? 0.8 : 1) * (cw / ch)) / VOTE_SPAN, (this.viewHeight * (cw / ch > 1 ? 0.8 : 1)) / 13);
     this.zoomGoal = this.mode === 'preview' ? previewZoom : this.voting ? voteZoom : this.bombState || this.balloonState ? 0.95 : lobbyZoom;
     if (this.bombState?.holder) {
       const h = this.people.get(this.bombState.holder);
@@ -764,6 +795,9 @@ export class LoungeView {
       sx = (Math.random() - 0.5) * this.shake * 0.6;
       sz = (Math.random() - 0.5) * this.shake * 0.6;
     }
+    this.sun.target.position.set(this.camTarget.x, 0, this.camTarget.z);
+    this.sun.position.set(this.camTarget.x + 6, 12, this.camTarget.z + 8);
+    this.sun.target.updateMatrixWorld();
     this.camera.position.copy(this.camTarget).add(new THREE.Vector3(sx, 0, sz)).addScaledVector(this.camDir, 30);
     this.camera.lookAt(this.camTarget.x + sx, this.camTarget.y, this.camTarget.z + sz);
 

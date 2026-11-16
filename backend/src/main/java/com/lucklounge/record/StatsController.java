@@ -20,6 +20,12 @@ class StatsController {
         return stats.stats(slug, period);
     }
 
+    /** 오늘의 커피 당첨자 (탕비실 보드) */
+    @GetMapping("/api/teams/{slug}/today")
+    java.util.List<StatsService.TodayWinner> today(@PathVariable String slug) {
+        return stats.today(slug);
+    }
+
     /** 경쟁 게임 최고 기록 (팀 1등, 내 기록). 연습과 내기 기록을 모두 본다 */
     @GetMapping("/api/teams/{slug}/bests")
     java.util.List<StatsService.GameBest> bests(@PathVariable String slug, @RequestParam(required = false) java.util.UUID player) {

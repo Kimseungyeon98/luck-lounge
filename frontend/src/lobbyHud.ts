@@ -157,7 +157,12 @@ export function showLobbyHud(root: HTMLElement, team: Team, myId: string, action
       rule('탑 쌓기', '움직이는 블록을 눌러 쌓기. 가장 낮게 쌓은 사람이 당첨'),
       rule('과녁 멈추기', '좌우로 움직이는 바늘을 가운데에 3번 멈추기. 평균 거리가 가장 먼 사람이 당첨'),
       h('p', { className: 'sheet-note' }, ['경쟁 존 부스 위에 서면 혼자 연습할 수 있어요.'])]),
-    h('p', { className: 'sheet-note' }, ['방장이 게임을 시작하면 10초 동안 하고 싶은 게임 부스 위에 서세요. 가장 많이 선 게임을 해요.']),
+    h('p', { className: 'sheet-note' }, ['방장이 게임을 시작하면 10초 동안 하고 싶은 게임 부스 위에 서세요. 가장 많이 선 게임을 해요. 탕비실·회의실에 있던 사람은 메인 대기실로 모여요.']),
+    h('div', { className: 'help-zone' }, [h('b', {}, ['방 세 개']),
+      rule('메인 대기실', '게임 부스 6개가 있는 곳'),
+      rule('☕ 탕비실', '왼쪽 뒤. 오늘의 커피 당첨자 보드, 커피 머신 앞에서 커피 한 잔'),
+      rule('📋 회의실', '오른쪽 앞. 화이트보드를 누르면 통계·최고 기록')]),
+    h('p', { className: 'sheet-note' }, ['PC에서는 W A S D 또는 방향키로도 걸을 수 있어요.']),
     h('button', { type: 'button', className: 'sheet-close guide-again' }, ['처음 안내 다시 보기']),
     h('button', { type: 'button', className: 'sheet-close' }, ['닫기']),
   ]);
@@ -192,7 +197,9 @@ export function showLobbyHud(root: HTMLElement, team: Team, myId: string, action
     moveMode = m;
     tapBtn.setAttribute('aria-pressed', String(m === 'tap'));
     stickBtn.setAttribute('aria-pressed', String(m === 'stick'));
-    hint.textContent = m === 'tap' ? '바닥을 누르면 그쪽으로 걸어가요' : '화면을 누른 채 끌면 그 방향으로 걸어요';
+    // PC(마우스)면 키보드 이동도 알려 준다 (M10)
+    const keys = matchMedia('(pointer: fine)').matches ? ' · 키보드는 W A S D' : '';
+    hint.textContent = (m === 'tap' ? '바닥을 누르면 그쪽으로 걸어가요' : '화면을 누른 채 끌면 그 방향으로 걸어요') + keys;
     hint.hidden = false;
     if (save) saveMoveMode(m);
     actions.onMoveMode(m);
